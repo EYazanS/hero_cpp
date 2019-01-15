@@ -2,25 +2,26 @@
 
 LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam);
 
+// Entry point
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR CommandLine, int ShowCode)
 {
-	WNDCLASS WindowsClass = {};
+	WNDCLASS windowsClass = {};
 
 	//CS_HREDRAW|CS_VREDRAW redraw the window when it gets dragged h => horizontal | v -> vertical
-	WindowsClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
-	WindowsClass.hInstance = Instance;
-	WindowsClass.lpszClassName = "Hero game";
-	WindowsClass.lpfnWndProc = MainWindowCallBack;
-	
+	windowsClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+	windowsClass.hInstance = Instance;
+	windowsClass.lpszClassName = "Hero game";
+	windowsClass.lpfnWndProc = MainWindowCallBack;
+
 	//WindowsClass.lpfnWndProc = MainWindowCallBack;
 	// WindowsClass.hIcon = ;
 	// WindowsClass.hCursor = 0;
 
-	if (RegisterClass(&WindowsClass))
+	if (RegisterClass(&windowsClass))
 	{
-		HWND WindowHandle = CreateWindowEx(
+		HWND windowHandle = CreateWindowEx(
 			0,
-			WindowsClass.lpszClassName,
+			windowsClass.lpszClassName,
 			"Hero window",
 			WS_OVERLAPPEDWINDOW | WS_VISIBLE,
 			CW_USEDEFAULT,
@@ -31,20 +32,20 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 			0,
 			Instance, 0);
 
-		if (WindowHandle)
+		if (windowHandle)
 		{
 			// Extract messages from windows
-			MSG Message;
+			MSG message;
 
 			// Change for future
 			for (; ;)
 			{
-				BOOL MessageResult = GetMessage(&Message, 0, 0, 0);
-				
-				if (MessageResult > 0)
+				BOOL messageResult = GetMessage(&message, 0, 0, 0);
+
+				if (messageResult > 0)
 				{
-					TranslateMessage(&Message);
-					DispatchMessage(&Message);
+					TranslateMessage(&message);
+					DispatchMessage(&message);
 				}
 				else
 				{
@@ -94,11 +95,23 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 			OutputDebugString("activated\n");
 		} break;
 
+		case WM_PAINT:
+		{
+			PAINTSTRUCT paint;
+			HDC DevicContext = BeginPaint(Window, &paint);
+			int x = paint.rcPaint.left;
+			int y = paint.rcPaint.top;
+			int height = paint.rcPaint.bottom - paint.rcPaint.top;
+			int width = paint.rcPaint.right - paint.rcPaint.left;
+			PatBlt(DevicContext, x, y, width, height, WHITENESS);
+			EndPaint(Window, &paint);
+		}break;
+
 		default:
 		{
-			// return windows default behaviour
+			// return window default behaviour
 			result = DefWindowProc(Window, Message, WParam, LParam);
-			// OutputDebugString("Everything else");
+
 		} break;
 
 	}
