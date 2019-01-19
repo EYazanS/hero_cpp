@@ -1,6 +1,7 @@
 #include<Windows.h>
 #include<stdint.h>
 #include<xinput.h>
+#include<dsound.h>
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -48,15 +49,23 @@ static x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 #pragma endregion
 
+#pragma region DirectSound
+
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+
+#pragma endregion
+
 static bool Runnig = true;
 static win32_offscreen_buffer GlobalBackBuffer;
 
 void Win32LoadXInputModule();
-void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset);
-void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
-void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions);
 win32_window_dimensions Win32GetWindowDimensions(HWND Window);
+void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset);
+void Win32InitDirectSound(HWND Window, int32 BufferSize, int32 SamplesPerSecond);
+void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
 LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam);
+void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions);
 
 // Entry point
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR CommandLine, int ShowCode)
@@ -98,6 +107,10 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 
 		if (window)
 		{
+			HDC deviceContext = GetDC(window);
+
+			Win32InitDirectSound(window, 48000, 48000 * sizeof(int16) * 2);
+
 			// Extract messages from windows
 			MSG message;
 			int xOffset = 0;
@@ -185,10 +198,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 
 				RenderGradiant(&GlobalBackBuffer, xOffset, yOffset);
 
-				HDC deviceContext = GetDC(window);
 				win32_window_dimensions dimensions = Win32GetWindowDimensions(window);
 				Win32DisplayBufferInWindow(&GlobalBackBuffer, deviceContext, dimensions);
-				ReleaseDC(window, deviceContext);
+				// ReleaseDC(window, deviceContext);
 			}
 		}
 		else
@@ -205,6 +217,170 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 
 	// int box = MessageBox(0, "Heroes are self made", "Hero", MB_OKCANCEL | MB_ICONINFORMATION);
 	return 0;
+}
+
+
+void Win32LoadXInputModule()
+{
+	HMODULE xInputModule = LoadLibrary("xinput1_4.dll");
+
+	// Show which version is loaded
+	if (!xInputModule)
+		xInputModule = LoadLibrary("xinput1_3.dll");
+
+	if (xInputModule)
+	{
+		XInputGetState = (x_input_get_state*)GetProcAddress(xInputModule, "XInputGetState");
+		XInputSetState = (x_input_set_state*)GetProcAddress(xInputModule, "XInputSetState");
+	}
+	else
+	{
+		// TODO: Log x input load error
+	}
+}
+
+win32_window_dimensions Win32GetWindowDimensions(HWND Window) {
+	win32_window_dimensions dimensions;
+	RECT clientRect;
+	GetClientRect(Window, &clientRect);
+	dimensions.Height = clientRect.bottom - clientRect.top;
+	dimensions.Width = clientRect.right - clientRect.left;
+	return dimensions;
+}
+
+void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset)
+{
+	uint8* row = (uint8*)Buffer->Memory;
+
+	for (int y = 0; y < Buffer->Height; ++y)
+	{
+		uint32* pixel = (uint32*)row;
+
+		for (int x = 0; x < Buffer->Width; ++x)
+		{
+			uint8 blue = (uint8)x + XOffset;
+			uint8 green = (uint8)y + YOffset;
+			uint8 red = 100;
+			uint8 alpha = 255;
+
+			// Blue
+			*pixel++ = (alpha << 24) | (red << 16) | (green << 8) | blue;
+		}
+
+		row += Buffer->Pitch;
+	}
+}
+
+void Win32InitDirectSound(HWND Window, int32 BufferSize, int32 SamplesPerSecond)
+{
+	// Load Direct sound library
+	HMODULE dSoundModule = LoadLibrary("dsound.dll");
+
+	if (dSoundModule)
+	{
+		// Get Direct sound object
+		direct_sound_create* directSoundCreate = (direct_sound_create*)GetProcAddress(dSoundModule, "DirectSoundCreate");
+		LPDIRECTSOUND directSound;
+
+		if (directSoundCreate && SUCCEEDED(directSoundCreate(0, &directSound, 0)))
+		{
+			WAVEFORMATEX waveFormat = {};
+
+			waveFormat.wFormatTag = WAVE_FORMAT_PCM;
+			waveFormat.nChannels = 2;
+			waveFormat.nSamplesPerSec = SamplesPerSecond;
+			waveFormat.wBitsPerSample = 16;
+			waveFormat.nBlockAlign = waveFormat.nChannels  * waveFormat.wBitsPerSample / 8;
+			waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+			waveFormat.cbSize = 0;
+
+			if (SUCCEEDED(directSound->SetCooperativeLevel(Window, DSSCL_PRIORITY)))
+			{
+				// Create primary buffer, it gets a hold to sound device and configure it
+				// to play sounds in the correct format we supply
+				// the second buffer will hold the sound we will play
+				DSBUFFERDESC bufferDescription = { };
+				bufferDescription.dwSize = sizeof(bufferDescription);
+				bufferDescription.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+				LPDIRECTSOUNDBUFFER primaryBuffer;
+
+				if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0)))
+				{
+					if (SUCCEEDED(primaryBuffer->SetFormat(&waveFormat)))
+					{
+						// Got format
+						OutputDebugString("Set primary buffer format\n");
+					}
+					else
+					{
+						//TODO: Log cant set format
+					}
+				}
+				else
+				{
+					//TODO: Log cant create buffer
+				}
+
+				bufferDescription.dwBufferBytes = BufferSize;
+			}
+			else
+			{
+				// TODO: Log sound cant set sound level error
+			}
+
+			// Create secondary buffer
+			DSBUFFERDESC secondaryBufferDescription = { };
+			secondaryBufferDescription.dwSize = sizeof(secondaryBufferDescription);
+			secondaryBufferDescription.dwFlags = 0;
+			secondaryBufferDescription.dwBufferBytes = BufferSize;
+			secondaryBufferDescription.lpwfxFormat = &waveFormat;
+
+			// Create secondery buffer that we write to
+			LPDIRECTSOUNDBUFFER secondaryBuffer;
+
+			if (SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDescription, &secondaryBuffer, 0)))
+			{
+				// Start playing
+				OutputDebugString("Secondary buffer created\n");
+			}
+			else
+			{
+				//TODO: Log cant create buffer
+			}
+		}
+		else
+		{
+			// TODO: Log sound function load error
+		}
+	}
+	else
+	{
+		// TODO: Log sound load error
+	}
+}
+
+void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width)
+{
+	if (Buffer->Memory)
+		VirtualFree(Buffer->Memory, 0, MEM_RELEASE);
+
+	Buffer->Width = Width;
+	Buffer->Height = Height;
+	Buffer->BytesPerPixel = 4;
+
+	Buffer->Info.bmiHeader.biSize = sizeof(Buffer->Info.bmiHeader);
+	Buffer->Info.bmiHeader.biWidth = Buffer->Width;
+	Buffer->Info.bmiHeader.biHeight = -Buffer->Height;
+	Buffer->Info.bmiHeader.biPlanes = 1;
+	Buffer->Info.bmiHeader.biBitCount = 32;
+	Buffer->Info.bmiHeader.biCompression = BI_RGB;
+
+	// 8 bits as padding because we have 8 bits green, 8 bits red and 8 bits blue equal 3 bytes
+	// so we need 8 more bits to keep performance the 8 bits wont be used at all
+	int bitMapMemory = (Buffer->Width * Buffer->Height) * Buffer->BytesPerPixel;
+	Buffer->Memory = VirtualAlloc(0, bitMapMemory, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+	Buffer->Pitch = Buffer->Width * Buffer->BytesPerPixel;
 }
 
 LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
@@ -337,29 +513,6 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 	return (result);
 }
 
-void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width)
-{
-	if (Buffer->Memory)
-		VirtualFree(Buffer->Memory, 0, MEM_RELEASE);
-
-	Buffer->Width = Width;
-	Buffer->Height = Height;
-	Buffer->BytesPerPixel = 4;
-
-	Buffer->Info.bmiHeader.biSize = sizeof(Buffer->Info.bmiHeader);
-	Buffer->Info.bmiHeader.biWidth = Buffer->Width;
-	Buffer->Info.bmiHeader.biHeight = -Buffer->Height;
-	Buffer->Info.bmiHeader.biPlanes = 1;
-	Buffer->Info.bmiHeader.biBitCount = 32;
-	Buffer->Info.bmiHeader.biCompression = BI_RGB;
-
-	// 8 bits as padding because we have 8 bits green, 8 bits red and 8 bits blue equal 3 bytes
-	// so we need 8 more bits to keep performance the 8 bits wont be used at all
-	int bitMapMemory = (Buffer->Width * Buffer->Height) * Buffer->BytesPerPixel;
-	Buffer->Memory = VirtualAlloc(0, bitMapMemory, MEM_COMMIT, PAGE_READWRITE);
-	Buffer->Pitch = Buffer->Width * Buffer->BytesPerPixel;
-}
-
 void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions)
 {
 	// TODO: Fix aspect ratio
@@ -367,50 +520,4 @@ void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext
 		0, 0, WindowDimensions.Width, WindowDimensions.Height, // Distenation
 		0, 0, Buffer->Width, Buffer->Height, // Source
 		Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
-}
-
-void Win32LoadXInputModule()
-{
-	HMODULE xInputModule = LoadLibrary("xinput1_4.dll");
-
-	if (!xInputModule)
-		xInputModule = LoadLibrary("xinput1_3.dll");
-
-	if (xInputModule)
-	{
-		XInputGetState = (x_input_get_state*)GetProcAddress(xInputModule, "XInputGetState");
-		XInputSetState = (x_input_set_state*)GetProcAddress(xInputModule, "XInputSetState");
-	}
-}
-
-void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset)
-{
-	uint8* row = (uint8*)Buffer->Memory;
-
-	for (int y = 0; y < Buffer->Height; ++y)
-	{
-		uint32* pixel = (uint32*)row;
-
-		for (int x = 0; x < Buffer->Width; ++x)
-		{
-			uint8 blue = (uint8)x + XOffset;
-			uint8 green = (uint8)y + YOffset;
-			uint8 red = 100;
-			uint8 alpha = 255;
-
-			// Blue
-			*pixel++ = (alpha << 24) | (red << 16) | (green << 8) | blue;
-		}
-
-		row += Buffer->Pitch;
-	}
-}
-
-win32_window_dimensions Win32GetWindowDimensions(HWND Window) {
-	win32_window_dimensions dimensions;
-	RECT clientRect;
-	GetClientRect(Window, &clientRect);
-	dimensions.Height = clientRect.bottom - clientRect.top;
-	dimensions.Width = clientRect.right - clientRect.left;
-	return dimensions;
 }
