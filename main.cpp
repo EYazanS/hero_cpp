@@ -58,6 +58,7 @@ typedef DIRECT_SOUND_CREATE(direct_sound_create);
 
 static bool Runnig = true;
 static win32_offscreen_buffer GlobalBackBuffer;
+static LPDIRECTSOUNDBUFFER secondaryBuffer;
 
 void Win32LoadXInputModule();
 win32_window_dimensions Win32GetWindowDimensions(HWND Window);
@@ -66,6 +67,7 @@ void Win32InitDirectSound(HWND Window, int32 BufferSize, int32 SamplesPerSecond)
 void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
 LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam);
 void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions);
+void PlayTestSound(int SamplesPerSecond, int BytesPerSample, int SecondaryBufferSize);
 
 // Entry point
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR CommandLine, int ShowCode)
@@ -109,12 +111,21 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 		{
 			HDC deviceContext = GetDC(window);
 
-			Win32InitDirectSound(window, 48000, 48000 * sizeof(int16) * 2);
 
 			// Extract messages from windows
 			MSG message;
+
+			// Graphic test
 			int xOffset = 0;
 			int yOffset = 0;
+
+			// Sound test
+			int samplesPerSecond = 48000;
+			int bytesPerSample = sizeof(int16) * 2;
+			int secondaryBufferSize = samplesPerSecond * bytesPerSample;
+
+			Win32InitDirectSound(window, samplesPerSecond, secondaryBufferSize);
+
 			// Change for future
 			while (Runnig)
 			{
@@ -192,11 +203,13 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 					else
 					{
 						// Controller is not available
-
 					}
 				}
 
 				RenderGradiant(&GlobalBackBuffer, xOffset, yOffset);
+
+				PlayTestSound(samplesPerSecond, bytesPerSample, secondaryBufferSize);
+
 
 				win32_window_dimensions dimensions = Win32GetWindowDimensions(window);
 				Win32DisplayBufferInWindow(&GlobalBackBuffer, deviceContext, dimensions);
@@ -271,95 +284,6 @@ void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset)
 	}
 }
 
-void Win32InitDirectSound(HWND Window, int32 BufferSize, int32 SamplesPerSecond)
-{
-	// Load Direct sound library
-	HMODULE dSoundModule = LoadLibrary("dsound.dll");
-
-	if (dSoundModule)
-	{
-		// Get Direct sound object
-		direct_sound_create* directSoundCreate = (direct_sound_create*)GetProcAddress(dSoundModule, "DirectSoundCreate");
-		LPDIRECTSOUND directSound;
-
-		if (directSoundCreate && SUCCEEDED(directSoundCreate(0, &directSound, 0)))
-		{
-			WAVEFORMATEX waveFormat = {};
-
-			waveFormat.wFormatTag = WAVE_FORMAT_PCM;
-			waveFormat.nChannels = 2;
-			waveFormat.nSamplesPerSec = SamplesPerSecond;
-			waveFormat.wBitsPerSample = 16;
-			waveFormat.nBlockAlign = waveFormat.nChannels  * waveFormat.wBitsPerSample / 8;
-			waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
-			waveFormat.cbSize = 0;
-
-			if (SUCCEEDED(directSound->SetCooperativeLevel(Window, DSSCL_PRIORITY)))
-			{
-				// Create primary buffer, it gets a hold to sound device and configure it
-				// to play sounds in the correct format we supply
-				// the second buffer will hold the sound we will play
-				DSBUFFERDESC bufferDescription = { };
-				bufferDescription.dwSize = sizeof(bufferDescription);
-				bufferDescription.dwFlags = DSBCAPS_PRIMARYBUFFER;
-
-				LPDIRECTSOUNDBUFFER primaryBuffer;
-
-				if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0)))
-				{
-					if (SUCCEEDED(primaryBuffer->SetFormat(&waveFormat)))
-					{
-						// Got format
-						OutputDebugString("Set primary buffer format\n");
-					}
-					else
-					{
-						//TODO: Log cant set format
-					}
-				}
-				else
-				{
-					//TODO: Log cant create buffer
-				}
-
-				bufferDescription.dwBufferBytes = BufferSize;
-			}
-			else
-			{
-				// TODO: Log sound cant set sound level error
-			}
-
-			// Create secondary buffer
-			DSBUFFERDESC secondaryBufferDescription = { };
-			secondaryBufferDescription.dwSize = sizeof(secondaryBufferDescription);
-			secondaryBufferDescription.dwFlags = 0;
-			secondaryBufferDescription.dwBufferBytes = BufferSize;
-			secondaryBufferDescription.lpwfxFormat = &waveFormat;
-
-			// Create secondery buffer that we write to
-			LPDIRECTSOUNDBUFFER secondaryBuffer;
-
-			if (SUCCEEDED(directSound->CreateSoundBuffer(&secondaryBufferDescription, &secondaryBuffer, 0)))
-			{
-				// Start playing
-				OutputDebugString("Secondary buffer created\n");
-			}
-			else
-			{
-				//TODO: Log cant create buffer
-			}
-		}
-		else
-		{
-			// TODO: Log sound function load error
-		}
-	}
-	else
-	{
-		// TODO: Log sound load error
-	}
-}
-
 void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width)
 {
 	if (Buffer->Memory)
@@ -379,7 +303,7 @@ void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width
 	// 8 bits as padding because we have 8 bits green, 8 bits red and 8 bits blue equal 3 bytes
 	// so we need 8 more bits to keep performance the 8 bits wont be used at all
 	int bitMapMemory = (Buffer->Width * Buffer->Height) * Buffer->BytesPerPixel;
-	Buffer->Memory = VirtualAlloc(0, bitMapMemory, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+	Buffer->Memory = VirtualAlloc(0, bitMapMemory, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	Buffer->Pitch = Buffer->Width * Buffer->BytesPerPixel;
 }
 
@@ -520,4 +444,161 @@ void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext
 		0, 0, WindowDimensions.Width, WindowDimensions.Height, // Distenation
 		0, 0, Buffer->Width, Buffer->Height, // Source
 		Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
+}
+
+void Win32InitDirectSound(HWND Window, int32 BufferSize, int32 SamplesPerSecond)
+{
+	// Load Direct sound library
+	HMODULE dSoundModule = LoadLibraryA("dsound.dll");
+
+	if (dSoundModule)
+	{
+		// Get Direct sound object
+		direct_sound_create* directSoundCreate = (direct_sound_create*)GetProcAddress(dSoundModule, "DirectSoundCreate");
+		LPDIRECTSOUND directSound;
+
+		if (directSoundCreate && SUCCEEDED(directSoundCreate(0, &directSound, 0)))
+		{
+			WAVEFORMATEX waveFormat = {};
+			waveFormat.wFormatTag = WAVE_FORMAT_PCM;
+			waveFormat.nChannels = 2;
+			waveFormat.nSamplesPerSec = SamplesPerSecond;
+			waveFormat.wBitsPerSample = 16;
+			waveFormat.nBlockAlign = (waveFormat.nChannels * waveFormat.wBitsPerSample) / 8;
+			waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+			waveFormat.cbSize = 0;
+
+			if (SUCCEEDED(directSound->SetCooperativeLevel(Window, DSSCL_PRIORITY)))
+			{
+				// Create primary buffer, it gets a hold to sound device and configure it
+				// to play sounds in the correct format we supply
+				// the second buffer will hold the sound we will play
+				DSBUFFERDESC bufferDescription = { };
+				bufferDescription.dwSize = sizeof(bufferDescription);
+				bufferDescription.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+				LPDIRECTSOUNDBUFFER primaryBuffer;
+
+				if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0)))
+				{
+					OutputDebugString("Set primary buffer format\n");
+
+					if (SUCCEEDED(primaryBuffer->SetFormat(&waveFormat)))
+					{
+						// Got format
+						OutputDebugString("Set primary buffer format\n");
+					}
+					else
+					{
+						// TODO: Log cant set format
+					}
+				}
+				else
+				{
+					// TODO: Log cant create buffer
+				}
+			}
+			else
+			{
+				// TODO: Log sound cant set sound level error
+			}
+
+			// Create secondary buffer
+			DSBUFFERDESC bufferDescription = { };
+			bufferDescription.dwSize = sizeof(bufferDescription);
+			bufferDescription.dwFlags = 0;
+			bufferDescription.dwBufferBytes = BufferSize;
+			bufferDescription.lpwfxFormat = &waveFormat;
+
+			if (SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &secondaryBuffer, 0)))
+			{
+				// Can start playing
+				OutputDebugString("Secondary buffer created\n");
+			}
+			else
+			{
+				// TODO: Log cant create buffer
+			}
+		}
+		else
+		{
+			// TODO: Log sound function load error
+		}
+	}
+	else
+	{
+		// TODO: Log sound load error
+	}
+}
+
+void PlayTestSound(int SamplesPerSecond, int BytesPerSample, int SecondaryBufferSize)
+{
+	int toneHz = 256;
+	int squareWavePeriod = SamplesPerSecond / toneHz;
+	int halfSquareWavePeriod = squareWavePeriod / 2;
+	int squareWaveCounter = 0;
+	int16 volume = 6000;
+	uint32 runningSampleIndex = 1;
+
+	// Test sound
+	DWORD playCursor;
+	DWORD writeCursor;
+
+	if (SUCCEEDED(secondaryBuffer->GetCurrentPosition(&playCursor, &writeCursor)))
+	{
+		DWORD byteToLock = runningSampleIndex * BytesPerSample % SecondaryBufferSize;
+		DWORD bytesToWrite;
+
+		if (byteToLock > playCursor)
+		{
+			bytesToWrite = SecondaryBufferSize - byteToLock;
+			bytesToWrite += playCursor;
+		}
+		else
+		{
+			bytesToWrite = playCursor - byteToLock;
+		}
+
+		void* regionOne;
+		DWORD regionOneSize;
+		void* regionTwo;
+		DWORD regionTwoSize;
+
+		if (secondaryBuffer->Lock(byteToLock, bytesToWrite, &regionOne, &regionOneSize, &regionTwo, &regionTwoSize, 0))
+		{
+			int16* sampleOut = (int16*)regionOne;
+
+			for (DWORD sampleIndex = 0; sampleIndex < regionOneSize; ++sampleIndex)
+			{
+				if (squareWaveCounter)
+					squareWaveCounter = squareWavePeriod;
+
+				int16 sampleValue = (runningSampleIndex / halfSquareWavePeriod) % 2 ? volume : -volume;
+
+				*sampleOut++ = sampleValue;
+				*sampleOut++ = sampleValue;
+				--squareWaveCounter;
+				++runningSampleIndex;
+			}
+
+			sampleOut = (int16*)regionTwo;
+
+			for (DWORD sampleIndex = 0; sampleIndex < regionTwoSize; ++sampleIndex)
+			{
+				if (squareWaveCounter)
+					squareWaveCounter = squareWavePeriod;
+
+				int16 sampleValue = (runningSampleIndex / halfSquareWavePeriod) % 2 ? volume : -volume;
+
+				*sampleOut++ = sampleValue;
+				*sampleOut++ = sampleValue;
+				--squareWaveCounter;
+				++runningSampleIndex;
+			}
+
+			secondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+
+			secondaryBuffer->Unlock(regionOne, regionOneSize, regionTwo, regionTwoSize);
+		}
+	}
 }
