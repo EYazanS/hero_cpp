@@ -1,9 +1,8 @@
-#include<Windows.h>
-#include<stdint.h>
-#include<xinput.h>
-#include<dsound.h>
-#include<xaudio2.h>
-#include <cmath>
+#include <Windows.h>
+#include <stdint.h>
+#include <xinput.h>
+#include <xaudio2.h>
+#include <math.h>
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -63,8 +62,7 @@ void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset);
 void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
 LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam);
 void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions);
-HRESULT Wind32InitializeXAudio(int SampleBits);
-HRESULT PlayTestSound(int SampleBits);
+HRESULT PlayTestSound();
 
 // Entry point
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR CommandLine, int ShowCode)
@@ -74,13 +72,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 
 	// Initialize XInput library
 	Win32LoadXInputModule();
-	const int SampleBits = 32;
 	// Stack overflow exceptinos
 	// uint8 memory[2 * 1024 * 1024] = {};
 
 	//Initialize first bitmap
 	Win32ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
-	Wind32InitializeXAudio(SampleBits);
 
 	// CS_HREDRAW|CS_VREDRAW redraw the entire window when it gets dragged, h => horizontal | v -> vertical
 	windowsClass.style = CS_HREDRAW | CS_VREDRAW;
@@ -117,6 +113,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 			int yOffset = 0;
 
 			// Sound test
+			PlayTestSound();
 
 			// Win32InitXAudioSound(sampleBits, Channels, samplesPerSecond);
 
@@ -201,8 +198,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 				}
 
 				RenderGradiant(&GlobalBackBuffer, xOffset, yOffset);
-
-				PlayTestSound(SampleBits);
 
 				win32_window_dimensions dimensions = Win32GetWindowDimensions(window);
 				Win32DisplayBufferInWindow(&GlobalBackBuffer, deviceContext, dimensions);
@@ -439,7 +434,7 @@ void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext
 		Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
 }
 
-HRESULT Wind32InitializeXAudio(int SampleBits)
+HRESULT PlayTestSound()
 {
 	// TODO: UncoInitialize on error.
 	HRESULT result;
@@ -455,50 +450,41 @@ HRESULT Wind32InitializeXAudio(int SampleBits)
 	if (FAILED(result = xAudio->CreateMasteringVoice(&masteringVoice)))
 		return result;
 
-	const int CHANNELS = 2;
-	const int SAMPLE_RATE = 44100;
+	const int channels = 2;
+	const int sampleRate = 48000;
+	const int SampleBits = 32;
+	const float Pi = 3.1415f;
+	const int voiceBufferSampleCount = sampleRate * 2;
+	const int frequency = 60;
+	float bufferData[voiceBufferSampleCount];
 
 	WAVEFORMATEX waveFormat = { 0 };
 	waveFormat.wBitsPerSample = SampleBits;
-	waveFormat.nAvgBytesPerSec = (SampleBits / 8) * CHANNELS * SAMPLE_RATE;
-	waveFormat.nChannels = CHANNELS;
-	waveFormat.nBlockAlign = CHANNELS * (SampleBits / 8);
+	waveFormat.nAvgBytesPerSec = (SampleBits / 8) * channels * sampleRate;
+	waveFormat.nChannels = channels;
+	waveFormat.nBlockAlign = channels * (SampleBits / 8);
 	waveFormat.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
-	waveFormat.nSamplesPerSec = SAMPLE_RATE;
+	waveFormat.nSamplesPerSec = sampleRate;
 
 	if (FAILED(result = xAudio->CreateSourceVoice(&sourceVoice, &waveFormat)))
 		return result;
 
-}
-
-HRESULT PlayTestSound(int SampleBits)
-{
-	HRESULT result = {};
-	static bool filledBuffer = false;
-
-	const int SAMPLE_RATE = 44100;
-	const float PI = 3.1415;
-	const int VOICE_BUFFER_SAMPLE_COUNT = SAMPLE_RATE * 2;
-	const int NOTE_FREQ = 55;
-
-	float bufferData[VOICE_BUFFER_SAMPLE_COUNT];
-
-	for (int i = 0; i < VOICE_BUFFER_SAMPLE_COUNT; i += 2) {
-		bufferData[i] = sin(i * 2 * PI * NOTE_FREQ / SAMPLE_RATE);
-		bufferData[i + 1] = sin(i * 2 * PI * (NOTE_FREQ + 2) / SAMPLE_RATE);
+	for (int i = 0; i < voiceBufferSampleCount; i += 2) {
+		bufferData[i] = sinf(i * 2 * Pi * frequency / sampleRate);
+		bufferData[i + 1] = sinf(i * 2 * Pi * (frequency + 2) / sampleRate);
 	}
 
 	buffer.pAudioData = (BYTE *)&bufferData;
-	buffer.AudioBytes = VOICE_BUFFER_SAMPLE_COUNT * (SampleBits / 8);
+	buffer.AudioBytes = voiceBufferSampleCount * (SampleBits / 8);
 	buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
 
 	if (FAILED(sourceVoice->SubmitSourceBuffer(&buffer)))
 		return result;
 
+	CoUninitialize();
+
 	if (FAILED(sourceVoice->Start()))
 		return result;
 
-	filledBuffer = true;
-
-	CoUninitialize();
+	return result;
 }
