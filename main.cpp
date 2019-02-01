@@ -3,6 +3,7 @@
 #include <xinput.h>
 #include <xaudio2.h>
 #include <math.h>
+#include <stdio.h>
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -14,10 +15,13 @@ typedef uint16_t uint16;
 typedef uint32_t uint32;
 typedef uint64_t uint64;
 
+typedef float real32;
+typedef double real64;
+
 struct win32_offscreen_buffer
 {
 	BITMAPINFO Info;
-	void *Memory;
+	void* Memory;
 	int Height;
 	int Width;
 	int BytesPerPixel;
@@ -37,7 +41,7 @@ X_INPUT_GET_STATE(XInputGetStateStub)
 {
 	return ERROR_DEVICE_NOT_CONNECTED;
 }
-static x_input_get_state *XInputGetState_ = XInputGetStateStub;
+static x_input_get_state* XInputGetState_ = XInputGetStateStub;
 #define XInputGetState XInputGetState_
 
 #define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
@@ -46,14 +50,14 @@ X_INPUT_SET_STATE(XInputSetStateStub)
 {
 	return ERROR_DEVICE_NOT_CONNECTED;
 }
-static x_input_set_state *XInputSetState_ = XInputSetStateStub;
+static x_input_set_state* XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 #pragma endregion
 
 static bool Runnig = true;
 static win32_offscreen_buffer GlobalBackBuffer;
-static IXAudio2 *xAudio;
-static IXAudio2SourceVoice *sourceVoice;
+static IXAudio2* xAudio;
+static IXAudio2SourceVoice* sourceVoice;
 static XAUDIO2_BUFFER buffer = { 0 };
 
 void Win32LoadXInputModule();
@@ -67,6 +71,11 @@ HRESULT PlayTestSound();
 // Entry point
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR CommandLine, int ShowCode)
 {
+	LARGE_INTEGER performanceCounterFrequencyResult;
+	QueryPerformanceFrequency(&performanceCounterFrequencyResult);
+	uint64 performanceCounterFrequency = performanceCounterFrequencyResult.QuadPart;
+	uint64 lastCycleCount = __rdtsc();
+
 	// Initialize Window to 0
 	WNDCLASS windowsClass = {};
 
@@ -113,8 +122,10 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 			int yOffset = 0;
 
 			// Sound test
-			PlayTestSound();
+			// PlayTestSound();
 
+			LARGE_INTEGER lastCountrer;
+			QueryPerformanceCounter(&lastCountrer);
 			// Win32InitXAudioSound(sampleBits, Channels, samplesPerSecond);
 
 			// Change for future
@@ -136,7 +147,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 					if (XInputGetState(controllerIndex, &controllerState) == ERROR_SUCCESS)
 					{
 						// Controller is plugged in
-						XINPUT_GAMEPAD *pad = &controllerState.Gamepad;
+						XINPUT_GAMEPAD* pad = &controllerState.Gamepad;
 
 						bool  dPadUp = pad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
 						bool  dPadDown = pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
@@ -201,7 +212,26 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 
 				win32_window_dimensions dimensions = Win32GetWindowDimensions(window);
 				Win32DisplayBufferInWindow(&GlobalBackBuffer, deviceContext, dimensions);
+
+				LARGE_INTEGER endCountrer;
+				QueryPerformanceCounter(&endCountrer);
+
+				endCountrer.QuadPart;
 				// ReleaseDC(window, deviceContext);
+				uint64 endCycleCount = __rdtsc();
+
+				uint64 cycleElapsed = endCycleCount - lastCycleCount;
+				uint64 counterElapsed = endCountrer.QuadPart - lastCountrer.QuadPart;
+				real64 milliseconds = (1000.f * (real32)counterElapsed) / (real32)performanceCounterFrequency;
+				real64 fps = (real32)performanceCounterFrequency / (real32)counterElapsed;
+				real64 mcpf = (real64)(cycleElapsed / (1000.f * 1000.f));
+
+				char buffer[250];
+				sprintf_s(buffer, "%.02fms, %.02fFPS, %.02f mc/f \n", milliseconds, fps, mcpf);
+				OutputDebugString(buffer);
+
+				lastCountrer = endCountrer;
+				lastCycleCount = cycleElapsed;
 			}
 		}
 		else
@@ -249,7 +279,7 @@ win32_window_dimensions Win32GetWindowDimensions(HWND Window) {
 	return dimensions;
 }
 
-void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset)
+void RenderGradiant(win32_offscreen_buffer * Buffer, int XOffset, int YOffset)
 {
 	uint8* row = (uint8*)Buffer->Memory;
 
@@ -272,7 +302,7 @@ void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset)
 	}
 }
 
-void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width)
+void Win32ResizeDIBSection(win32_offscreen_buffer * Buffer, int Height, int Width)
 {
 	if (Buffer->Memory)
 		VirtualFree(Buffer->Memory, 0, MEM_RELEASE);
@@ -316,7 +346,7 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 		case WM_SYSKEYUP:
 		case WM_SYSKEYDOWN:
 		{
-			uint32 vkCode = WParam;
+			uint64 vkCode = WParam;
 			bool wasDown = ((LParam & (1 << 30)) != 0);
 			bool isDown = ((LParam & (1 << 31)) == 0);
 
@@ -385,7 +415,7 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 					case VK_F4:
 					{
 						// Is alt button held down
-						if ((LParam & (1 << 29)) != 0)
+						if ((LParam& (1 << 29)) != 0)
 							Runnig = false;
 
 					} break;
@@ -425,7 +455,7 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 	return (result);
 }
 
-void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions)
+void Win32DisplayBufferInWindow(win32_offscreen_buffer * Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions)
 {
 	// TODO: Fix aspect ratio
 	StretchDIBits(DevicContext,
@@ -445,7 +475,7 @@ HRESULT PlayTestSound()
 	if (FAILED(result = XAudio2Create(&xAudio)))
 		return result;
 
-	IXAudio2MasteringVoice *masteringVoice;
+	IXAudio2MasteringVoice * masteringVoice;
 
 	if (FAILED(result = xAudio->CreateMasteringVoice(&masteringVoice)))
 		return result;
@@ -474,7 +504,7 @@ HRESULT PlayTestSound()
 		bufferData[i + 1] = sinf(i * 2 * Pi * (frequency + 2) / sampleRate);
 	}
 
-	buffer.pAudioData = (BYTE *)&bufferData;
+	buffer.pAudioData = (BYTE*)& bufferData;
 	buffer.AudioBytes = voiceBufferSampleCount * (SampleBits / 8);
 	buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
 
