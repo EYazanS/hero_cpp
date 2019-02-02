@@ -32,21 +32,21 @@ void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
 
 void OutputGameSound(game_sound_buffer * Buffer)
 {
+	//int initValue = Buffer->WavePeriod;
+	//for (int i = 0; i < Buffer->VoiceBufferSampleCount; i += 2)
+	//{
+	//	auto sineValue = i * (2 * Pi * (Buffer->Frequency + 2) / Buffer->SampleRate);
 
-	for (int i = 0; i < Buffer->VoiceBufferSampleCount; i += 2)
+	//	Buffer->BufferData[i] = sinf(sineValue);
+	//	Buffer->BufferData[i + 1] = sinf(sineValue);
+	//}
+
+	for (size_t i = 0; i < Buffer->VoiceBufferSampleCount; ++i)
 	{
-		auto sineValue = Buffer->wavePeriod * 2 * Pi * (Buffer->Frequency + 2) / Buffer->SampleRate;
+		Buffer->BufferData[i] = sinf((Buffer->Time * 2 * Pi) / Buffer->WavePeriod);
+		Buffer->Time += (1.0f / Buffer->Frequency);             // move time forward one sample-tick
 
-		Buffer->BufferData[i] = sinf(sineValue);
-		Buffer->BufferData[i + 1] = sinf(sineValue);
-
-		if (Buffer->wavePeriod <= 0)
-		{
-			Buffer->wavePeriod += 2;
-		}
-		else
-		{
-			Buffer->wavePeriod -= 2;
-		}
+		if (Buffer->Time > Buffer->WavePeriod)
+			Buffer->Time -= Buffer->WavePeriod;    // if we're beyond the period of the sine, skip time back by one period
 	}
 }

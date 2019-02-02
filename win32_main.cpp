@@ -109,7 +109,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 	soundBuffer.Frequency = 256;
 	soundBuffer.SampleRate = 48000;
 	soundBuffer.VoiceBufferSampleCount = soundBuffer.SampleRate * 2;
-
+	soundBuffer.WavePeriod = 1;
+	soundBuffer.Time = 1;
 	//WindowsClass.lpfnWndProc = MainWindowCallBack;
 	// WindowsClass.hIcon = ;
 	// WindowsClass.hCursor = 0;
