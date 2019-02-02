@@ -1,14 +1,25 @@
-#include <cstdint>
 #pragma once
+
+#include <cstdint>
+#include <math.h>
+
+constexpr float Pi = 3.14;
 
 struct game_offscreen_buffer
 {
-	// BITMAPINFO Info;
 	void* Memory;
 	int Height;
 	int Width;
 	int BytesPerPixel;
 	int Pitch;
+};
+
+struct game_sound_buffer
+{
+	float BufferData[96000];
+	int VoiceBufferSampleCount;
+	int SampleRate;
+	int Frequency;
 };
 
 typedef int8_t int8;
@@ -27,6 +38,6 @@ typedef double real64;
 // Services that the game provide for the platform
 
 // Need to take the use input, the bitmap buffer to use, the sound buffer to use and the timing
-void  GameUpdateAndRender(game_offscreen_buffer* Buffer);
-
+void GameUpdateAndRender(game_offscreen_buffer* RenderBuffer, int XOffset, int YOffset, game_sound_buffer* SoundBuffer);
 void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset);
+void OutputGameSound(game_sound_buffer* buffer);

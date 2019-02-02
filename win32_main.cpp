@@ -1,3 +1,4 @@
+
 #include "hero.h"
 
 #include <Windows.h>
@@ -64,15 +65,19 @@ static x_input_set_state* XInputSetState_ = XInputSetStateStub;
 static bool Runnig = true;
 static win32_offscreen_buffer GlobalBackBuffer;
 static IXAudio2* xAudio;
-static IXAudio2SourceVoice* sourceVoice;
-static XAUDIO2_BUFFER buffer = { 0 };
+static IXAudio2SourceVoice* GlobalSourceVoice;
+static XAUDIO2_BUFFER GlobalSoundBuffer = { 0 };
+
+const int channels = 2;
+const int SampleBits = 32;
 
 void Win32LoadXInputModule();
 win32_window_dimensions Win32GetWindowDimensions(HWND Window);
 void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
 LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam);
 void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions);
-HRESULT PlayTestSound();
+HRESULT InitializeXAudio(int SampleRate);
+HRESULT PlayGameSound(game_sound_buffer* SoundBuffer);
 
 // Entry point
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR CommandLine, int ShowCode)
@@ -98,6 +103,12 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 	windowsClass.hInstance = Instance;
 	windowsClass.lpszClassName = "Class Hero game";
 	windowsClass.lpfnWndProc = MainWindowCallBack;
+
+	game_sound_buffer soundBuffer = {};
+
+	soundBuffer.Frequency = 256;
+	soundBuffer.SampleRate = 48000;
+	soundBuffer.VoiceBufferSampleCount = soundBuffer.SampleRate * 2;
 
 	//WindowsClass.lpfnWndProc = MainWindowCallBack;
 	// WindowsClass.hIcon = ;
@@ -128,7 +139,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 			int yOffset = 0;
 
 			// Sound test
-			// PlayTestSound();
+			InitializeXAudio(soundBuffer.SampleRate);
 
 			LARGE_INTEGER lastCountrer;
 			QueryPerformanceCounter(&lastCountrer);
@@ -221,7 +232,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 				gameBuffer.Memory = GlobalBackBuffer.Memory;
 				gameBuffer.Pitch = GlobalBackBuffer.Pitch;
 
-				GameUpdateAndRender(&gameBuffer);
+
+				GameUpdateAndRender(&gameBuffer, xOffset, yOffset, &soundBuffer);
+
+				PlayGameSound(&soundBuffer);
+
 				win32_window_dimensions dimensions = Win32GetWindowDimensions(window);
 				Win32DisplayBufferInWindow(&GlobalBackBuffer, deviceContext, dimensions);
 
@@ -258,12 +273,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 	{
 		// register fails
 		// TODO: Logging
-		}
+	}
 
 	// int box = MessageBox(0, "Heroes are self made", "Hero", MB_OKCANCEL | MB_ICONINFORMATION);
 	return 0;
-	}
-
+}
 
 void Win32LoadXInputModule()
 {
@@ -292,7 +306,6 @@ win32_window_dimensions Win32GetWindowDimensions(HWND Window) {
 	dimensions.Width = clientRect.right - clientRect.left;
 	return dimensions;
 }
-
 
 void Win32ResizeDIBSection(win32_offscreen_buffer * Buffer, int Height, int Width)
 {
@@ -456,7 +469,7 @@ void Win32DisplayBufferInWindow(win32_offscreen_buffer * Buffer, HDC DevicContex
 		Buffer->Memory, &Buffer->Info, DIB_RGB_COLORS, SRCCOPY);
 }
 
-HRESULT PlayTestSound()
+HRESULT InitializeXAudio(int SampleRate)
 {
 	// TODO: UncoInitialize on error.
 	HRESULT result;
@@ -472,40 +485,39 @@ HRESULT PlayTestSound()
 	if (FAILED(result = xAudio->CreateMasteringVoice(&masteringVoice)))
 		return result;
 
-	const int channels = 2;
-	const int sampleRate = 48000;
-	const int SampleBits = 32;
-	const float Pi = 3.1415f;
-	const int voiceBufferSampleCount = sampleRate * 2;
-	const int frequency = 60;
-	float bufferData[voiceBufferSampleCount];
-
 	WAVEFORMATEX waveFormat = { 0 };
 	waveFormat.wBitsPerSample = SampleBits;
-	waveFormat.nAvgBytesPerSec = (SampleBits / 8) * channels * sampleRate;
+	waveFormat.nAvgBytesPerSec = (SampleBits / 8) * channels * SampleRate;
 	waveFormat.nChannels = channels;
 	waveFormat.nBlockAlign = channels * (SampleBits / 8);
 	waveFormat.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
-	waveFormat.nSamplesPerSec = sampleRate;
+	waveFormat.nSamplesPerSec = SampleRate;
 
-	if (FAILED(result = xAudio->CreateSourceVoice(&sourceVoice, &waveFormat)))
+	if (FAILED(result = xAudio->CreateSourceVoice(&GlobalSourceVoice, &waveFormat)))
 		return result;
 
-	for (int i = 0; i < voiceBufferSampleCount; i += 2) {
-		bufferData[i] = sinf(i * 2 * Pi * frequency / sampleRate);
-		bufferData[i + 1] = sinf(i * 2 * Pi * (frequency + 2) / sampleRate);
-	}
-
-	buffer.pAudioData = (BYTE*)& bufferData;
-	buffer.AudioBytes = voiceBufferSampleCount * (SampleBits / 8);
-	buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
-
-	if (FAILED(sourceVoice->SubmitSourceBuffer(&buffer)))
-		return result;
 
 	CoUninitialize();
 
-	if (FAILED(sourceVoice->Start()))
+	return result;
+}
+
+HRESULT PlayGameSound(game_sound_buffer* SoundBuffer)
+{
+	HRESULT result;
+
+	if (FAILED(result = CoInitialize(NULL)))
+		return result;
+
+	GlobalSoundBuffer.pAudioData = (BYTE*) SoundBuffer->BufferData;
+	GlobalSoundBuffer.AudioBytes = SoundBuffer->VoiceBufferSampleCount * (SampleBits / 8);
+	GlobalSoundBuffer.LoopCount = XAUDIO2_LOOP_INFINITE;
+	GlobalSoundBuffer.PlayLength = 48000;
+
+	if (FAILED(GlobalSourceVoice->SubmitSourceBuffer(&GlobalSoundBuffer)))
+		return result;
+
+	if (FAILED(GlobalSourceVoice->Start()))
 		return result;
 
 	return result;

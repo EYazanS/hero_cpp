@@ -1,8 +1,10 @@
 #include "hero.h"
 
-void GameUpdateAndRender(game_offscreen_buffer* Buffer)
+void GameUpdateAndRender(game_offscreen_buffer* RenderBuffer, int XOffset, int YOffset, game_sound_buffer* SoundBuffer)
 {
-	RenderGradiant(Buffer, 0, 0);
+	// TODO: Allow sample offset for more robust platform options
+	RenderGradiant(RenderBuffer, XOffset, YOffset);
+	OutputGameSound(SoundBuffer);
 }
 
 void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
@@ -25,5 +27,17 @@ void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
 		}
 
 		row += Buffer->Pitch;
+	}
+}
+
+void OutputGameSound(game_sound_buffer * buffer)
+{
+	static real32 tSine;
+	int16  toneVolume = 3000;
+
+	for (int i = 0; i < buffer->VoiceBufferSampleCount; i += 2)
+	{
+		buffer->BufferData[i] = sinf(i * 2 * Pi * buffer->Frequency / buffer->SampleRate);
+		buffer->BufferData[i + 1] = sinf(i * 2 * Pi * (buffer->Frequency + 2) / buffer->SampleRate);
 	}
 }
