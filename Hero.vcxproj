@@ -19,7 +19,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="hero.cpp" />
+    <ClCompile Include="win32_main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="hero.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>

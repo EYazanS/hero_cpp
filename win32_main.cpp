@@ -1,3 +1,5 @@
+#include "hero.h"
+
 #include <Windows.h>
 #include <stdint.h>
 #include <xinput.h>
@@ -5,18 +7,23 @@
 #include <math.h>
 #include <stdio.h>
 
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
-
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-
-typedef float real32;
-typedef double real64;
+/*
+	TOOD:
+		- Save game location
+		- Getting handle of the exe
+		- Threading
+		- Asset loading path
+		- Raw input
+		- Sleep/timebeginperiod
+		- ClipCursor() - for multi screen support
+		- full screen support
+		- control cursor visibilaty (WM_SETCURSOR)
+		- Query canel auto play
+		- WM_ACTIVEAPP (for when we are not the active application)
+		- Blit speed improvement (BitBlt)
+		- Hardware acceleration (Opengl, directx)
+		- GetKeyboard layout (international WASD support)
+*/
 
 struct win32_offscreen_buffer
 {
@@ -62,7 +69,6 @@ static XAUDIO2_BUFFER buffer = { 0 };
 
 void Win32LoadXInputModule();
 win32_window_dimensions Win32GetWindowDimensions(HWND Window);
-void RenderGradiant(win32_offscreen_buffer* Buffer, int XOffset, int YOffset);
 void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
 LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam);
 void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions);
@@ -208,8 +214,14 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 					}
 				}
 
-				RenderGradiant(&GlobalBackBuffer, xOffset, yOffset);
+				game_offscreen_buffer gameBuffer = {};
 
+				gameBuffer.Height = GlobalBackBuffer.Height;
+				gameBuffer.Width = GlobalBackBuffer.Width;
+				gameBuffer.Memory = GlobalBackBuffer.Memory;
+				gameBuffer.Pitch = GlobalBackBuffer.Pitch;
+
+				GameUpdateAndRender(&gameBuffer);
 				win32_window_dimensions dimensions = Win32GetWindowDimensions(window);
 				Win32DisplayBufferInWindow(&GlobalBackBuffer, deviceContext, dimensions);
 
@@ -226,9 +238,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 				real64 fps = (real32)performanceCounterFrequency / (real32)counterElapsed;
 				real64 mcpf = (real64)(cycleElapsed / (1000.f * 1000.f));
 
+#if 0	
 				char buffer[250];
 				sprintf_s(buffer, "%.02fms, %.02fFPS, %.02f mc/f \n", milliseconds, fps, mcpf);
 				OutputDebugString(buffer);
+#endif // 0
 
 				lastCountrer = endCountrer;
 				lastCycleCount = cycleElapsed;
@@ -244,11 +258,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 	{
 		// register fails
 		// TODO: Logging
-	}
+		}
 
 	// int box = MessageBox(0, "Heroes are self made", "Hero", MB_OKCANCEL | MB_ICONINFORMATION);
 	return 0;
-}
+	}
 
 
 void Win32LoadXInputModule()
@@ -279,28 +293,6 @@ win32_window_dimensions Win32GetWindowDimensions(HWND Window) {
 	return dimensions;
 }
 
-void RenderGradiant(win32_offscreen_buffer * Buffer, int XOffset, int YOffset)
-{
-	uint8* row = (uint8*)Buffer->Memory;
-
-	for (int y = 0; y < Buffer->Height; ++y)
-	{
-		uint32* pixel = (uint32*)row;
-
-		for (int x = 0; x < Buffer->Width; ++x)
-		{
-			uint8 blue = (uint8)x + XOffset;
-			uint8 green = (uint8)y + YOffset;
-			uint8 red = 100;
-			uint8 alpha = 255;
-
-			// Blue
-			*pixel++ = (alpha << 24) | (red << 16) | (green << 8) | blue;
-		}
-
-		row += Buffer->Pitch;
-	}
-}
 
 void Win32ResizeDIBSection(win32_offscreen_buffer * Buffer, int Height, int Width)
 {
