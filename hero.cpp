@@ -32,15 +32,6 @@ void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
 
 void OutputGameSound(game_sound_buffer * Buffer)
 {
-	//int initValue = Buffer->WavePeriod;
-	//for (int i = 0; i < Buffer->VoiceBufferSampleCount; i += 2)
-	//{
-	//	auto sineValue = i * (2 * Pi * (Buffer->Frequency + 2) / Buffer->SampleRate);
-
-	//	Buffer->BufferData[i] = sinf(sineValue);
-	//	Buffer->BufferData[i + 1] = sinf(sineValue);
-	//}
-
 	for (size_t i = 0; i < Buffer->VoiceBufferSampleCount; ++i)
 	{
 		Buffer->BufferData[i] = sinf((Buffer->Time * 2 * Pi) / Buffer->WavePeriod);
