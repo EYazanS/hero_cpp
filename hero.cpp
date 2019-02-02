@@ -4,7 +4,7 @@ void GameUpdateAndRender(game_offscreen_buffer* RenderBuffer, int XOffset, int Y
 {
 	// TODO: Allow sample offset for more robust platform options
 	RenderGradiant(RenderBuffer, XOffset, YOffset);
-	OutputGameSound(SoundBuffer);
+	// OutputGameSound(SoundBuffer);
 }
 
 void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
@@ -30,14 +30,23 @@ void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
 	}
 }
 
-void OutputGameSound(game_sound_buffer * buffer)
+void OutputGameSound(game_sound_buffer * Buffer)
 {
-	static real32 tSine;
-	int16  toneVolume = 3000;
 
-	for (int i = 0; i < buffer->VoiceBufferSampleCount; i += 2)
+	for (int i = 0; i < Buffer->VoiceBufferSampleCount; i += 2)
 	{
-		buffer->BufferData[i] = sinf(i * 2 * Pi * buffer->Frequency / buffer->SampleRate);
-		buffer->BufferData[i + 1] = sinf(i * 2 * Pi * (buffer->Frequency + 2) / buffer->SampleRate);
+		auto sineValue = Buffer->wavePeriod * 2 * Pi * (Buffer->Frequency + 2) / Buffer->SampleRate;
+
+		Buffer->BufferData[i] = sinf(sineValue);
+		Buffer->BufferData[i + 1] = sinf(sineValue);
+
+		if (Buffer->wavePeriod <= 0)
+		{
+			Buffer->wavePeriod += 2;
+		}
+		else
+		{
+			Buffer->wavePeriod -= 2;
+		}
 	}
 }

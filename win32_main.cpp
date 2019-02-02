@@ -513,7 +513,7 @@ HRESULT PlayGameSound(game_sound_buffer* SoundBuffer)
 	GlobalSoundBuffer.AudioBytes = SoundBuffer->VoiceBufferSampleCount * (SampleBits / 8);
 	GlobalSoundBuffer.LoopCount = XAUDIO2_LOOP_INFINITE;
 	GlobalSoundBuffer.PlayLength = 48000;
-
+	OutputGameSound(SoundBuffer);
 	if (FAILED(GlobalSourceVoice->SubmitSourceBuffer(&GlobalSoundBuffer)))
 		return result;
 

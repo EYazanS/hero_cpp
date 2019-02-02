@@ -20,6 +20,7 @@ struct game_sound_buffer
 	int VoiceBufferSampleCount;
 	int SampleRate;
 	int Frequency;
+	int wavePeriod;
 };
 
 typedef int8_t int8;
