@@ -1,10 +1,27 @@
 #include "hero.h"
 
-void GameUpdateAndRender(game_offscreen_buffer* RenderBuffer, int XOffset, int YOffset, game_sound_buffer* SoundBuffer)
+void GameUpdateAndRender(game_offscreen_buffer* RenderBuffer, game_sound_buffer* SoundBuffer, game_input* Input)
 {
+	static int xOffset = 0, yOffset = 0, Hz = 256;
+
+	game_controller_input* input0 = &Input->Controllers[0];
+	if (input0->IsAnalog)
+	{
+		xOffset += (4.f * (input0->EndY));
+	}
+	else
+	{
+		//TODO: User digital movement system
+	}
+
+	if (input0->DownButton.EndedDown)
+	{
+		yOffset += 1;
+	}
+
 	// TODO: Allow sample offset for more robust platform options
-	RenderGradiant(RenderBuffer, XOffset, YOffset);
-	// OutputGameSound(SoundBuffer);
+	RenderGradiant(RenderBuffer, xOffset, yOffset);
+	OutputGameSound(SoundBuffer);
 }
 
 void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
