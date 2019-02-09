@@ -1,13 +1,22 @@
 #include "hero.h"
 
-void GameUpdateAndRender(game_offscreen_buffer* RenderBuffer, game_sound_buffer* SoundBuffer, game_input* Input)
+void GameUpdateAndRender(game_memory* Memory, game_offscreen_buffer* RenderBuffer, game_sound_buffer* SoundBuffer, game_input* Input)
 {
-	static int xOffset = 0, yOffset = 0, Hz = 256;
+	Assert(sizeof(game_state) <= Memory->PermenantStorageSpace);
+
+	game_state* gameState = (game_state*)Memory->PermenantStorage;
+
+	if (!Memory->IsInitialized)
+	{
+		gameState->ToneHz = 256;
+		Memory->IsInitialized = true;
+	}
 
 	game_controller_input* input0 = &Input->Controllers[0];
+
 	if (input0->IsAnalog)
 	{
-		xOffset += (4.f * (input0->EndY));
+		gameState->XOffset += (4.f * (input0->EndY));
 	}
 	else
 	{
@@ -16,11 +25,11 @@ void GameUpdateAndRender(game_offscreen_buffer* RenderBuffer, game_sound_buffer*
 
 	if (input0->DownButton.EndedDown)
 	{
-		yOffset += 1;
+		gameState->YOffset += 1;
 	}
 
 	// TODO: Allow sample offset for more robust platform options
-	RenderGradiant(RenderBuffer, xOffset, yOffset);
+	RenderGradiant(RenderBuffer, gameState->XOffset, gameState->YOffset);
 	OutputGameSound(SoundBuffer);
 }
 

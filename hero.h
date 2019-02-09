@@ -1,5 +1,13 @@
 #pragma once
 
+#define ArrayCount(Array) (sizeof((Array)) / sizeof((Array)[0]))
+
+#define Killobytes(Value) ((Value)*1024)
+#define Megabytes(Value) (Killobytes(Value)*1024)
+#define Gigabytes(Value) (Megabytes(Value)*1024)
+#define Assert(Expression) \
+	if (!(Expression)) { *(int*)0 = 0; }
+
 #include <cstdint>
 #include <math.h>
 
@@ -47,16 +55,16 @@ struct game_controller_input
 {
 	real32 StartX;
 	real32 StartY;
-	
+
 	real32 MinX;
 	real32 MinY;
 
 	real32 MaxX;
 	real32 MaxY;
-	
+
 	real32 EndX;
 	real32 EndY;
-	
+
 	bool IsAnalog;
 
 	union
@@ -81,10 +89,30 @@ struct game_input
 	game_controller_input Controllers[4];
 };
 
+struct game_state
+{
+	int ToneHz;
+	int YOffset;
+	int XOffset;
+};
+
+struct game_memory
+{
+	bool IsInitialized;
+	uint64 PermenantStorageSpace;
+	void* PermenantStorage;
+	uint64 TransiateStorageSpace;
+	void* TransiateStorage;
+};
+
+struct game_clocks
+{
+	real32 SecondsElapsed;
+};
 
 // Services that the game provide for the platform
 
 // Need to take the use input, the bitmap buffer to use, the sound buffer to use and the timing
-void GameUpdateAndRender(game_offscreen_buffer* RenderBuffer, game_sound_buffer* SoundBuffer, game_input* Input);
+void GameUpdateAndRender(game_memory* Memory, game_offscreen_buffer* RenderBuffer, game_sound_buffer* SoundBuffer, game_input* Input);
 void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset);
 void OutputGameSound(game_sound_buffer* buffer);
