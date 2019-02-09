@@ -105,11 +105,6 @@ struct game_memory
 	void* TransiateStorage;
 };
 
-struct game_clocks
-{
-	real32 SecondsElapsed;
-};
-
 // Services that the game provide for the platform
 
 // Need to take the use input, the bitmap buffer to use, the sound buffer to use and the timing
