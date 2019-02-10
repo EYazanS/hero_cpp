@@ -2,9 +2,10 @@
 
 #define ArrayCount(Array) (sizeof((Array)) / sizeof((Array)[0]))
 
-#define Killobytes(Value) ((Value)*1024)
-#define Megabytes(Value) (Killobytes(Value)*1024)
-#define Gigabytes(Value) (Megabytes(Value)*1024)
+#define Killobytes(Value) ((Value)*1024LL)
+#define Megabytes(Value) (Killobytes(Value)*1024LL)
+#define Gigabytes(value) (Megabytes(value)*1024LL)
+#define Terabytes(value) (Gigabytes(value)*1024LL)
 #define Assert(Expression) \
 	if (!(Expression)) { *(int*)0 = 0; }
 
@@ -24,7 +25,7 @@ typedef uint64_t uint64;
 typedef float real32;
 typedef double real64;
 
-constexpr real32 Pi = 3.14;
+constexpr real32 Pi = 3.14f;
 
 struct game_offscreen_buffer
 {
@@ -99,13 +100,30 @@ struct game_state
 struct game_memory
 {
 	bool IsInitialized;
-	uint64 PermenantStorageSpace;
+	uint64 PermenantStorageSize;
 	void* PermenantStorage;
-	uint64 TransiateStorageSpace;
+	uint64 TransiateStorageSize;
 	void* TransiateStorage;
 };
 
+struct debug_read_file_result
+{
+	void* Content;
+	uint32 ContentSize;
+};
+
+// Utility functions 
+inline uint32 SafeTruncateUint64(uint64 Value)
+{
+	Assert(Value < 0xFFFFFFFF);
+	uint32 newUint32Value = (uint32)Value;
+	return newUint32Value;
+}
+
 // Services that the game provide for the platform
+void DEBUGPlatformReleaseFileMemory(void* Memory);
+bool DEBUGPlatformWriteEntireFile(const char* FileName, int32 MemorySize, void* Memory);
+debug_read_file_result DEBUGPlatformReadEntireFile(const char* FileName);
 
 // Need to take the use input, the bitmap buffer to use, the sound buffer to use and the timing
 void GameUpdateAndRender(game_memory* Memory, game_offscreen_buffer* RenderBuffer, game_sound_buffer* SoundBuffer, game_input* Input);

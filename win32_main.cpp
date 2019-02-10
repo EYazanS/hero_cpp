@@ -75,7 +75,6 @@ void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext
 void Win32ProcessDigitalButtons(WORD XInputButtonState, DWORD ButtonBit, game_button_state* OldState, game_button_state* NewState);
 void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
 
-
 win32_window_dimensions Win32GetWindowDimensions(HWND Window);
 
 LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam);
@@ -111,11 +110,16 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 	game_sound_buffer soundBuffer = {};
 
 	game_memory gameMemory = {};
-	gameMemory.PermenantStorageSpace = Megabytes(64);
-	gameMemory.PermenantStorage = VirtualAlloc(0, gameMemory.PermenantStorageSpace, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
-	gameMemory.TransiateStorageSpace = Gigabytes((uint64)4);
-	gameMemory.TransiateStorage = VirtualAlloc(0, gameMemory.TransiateStorageSpace, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	gameMemory.PermenantStorageSize = Megabytes(64);
+	gameMemory.TransiateStorageSize = Gigabytes((uint64)4);
+
+	// TODO: Remove before production :D
+	LPVOID baseAddress = (LPVOID)Terabytes(2);
+	uint64 totalSize = gameMemory.PermenantStorageSize + gameMemory.TransiateStorageSize;
+
+	gameMemory.PermenantStorage = (uint8_t*)VirtualAlloc(baseAddress, totalSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	gameMemory.TransiateStorage = (uint8_t*)gameMemory.PermenantStorage + gameMemory.PermenantStorageSize;
 
 	soundBuffer.Frequency = 60;
 	soundBuffer.SampleRate = 48000;
@@ -397,12 +401,12 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 		case WM_SYSKEYUP:
 		case WM_SYSKEYDOWN:
 		{
-			uint64 vkCode = WParam;
+			uint64 virtualKeyCode = WParam;
 			bool wasDown = ((LParam & (1 << 30)) != 0);
 			bool isDown = ((LParam & (1 << 31)) == 0);
 
 			if (isDown != wasDown)
-				switch (vkCode)
+				switch (virtualKeyCode)
 				{
 					case 'W':
 						OutputDebugString("W");
@@ -572,4 +576,90 @@ void Win32ProcessDigitalButtons(WORD XInputButtonState, DWORD ButtonBit, game_bu
 {
 	NewState->EndedDown = ((XInputButtonState & ButtonBit) == ButtonBit);
 	NewState->HalfTransitionCount = (OldState->EndedDown != NewState->EndedDown) ? 1 : 0;
+}
+
+debug_read_file_result DEBUGPlatformReadEntireFile(const char* FileName)
+{
+	debug_read_file_result result = {};
+
+	HANDLE fileHandle = CreateFile(FileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+
+	if (fileHandle != INVALID_HANDLE_VALUE)
+	{
+		LARGE_INTEGER fileSize;
+
+		if (GetFileSizeEx(fileHandle, &fileSize))
+		{
+			Assert(fileSize.QuadPart <= 0xFFFFFFFF);
+			uint32 fileSize32 = SafeTruncateUint64(fileSize.QuadPart);
+			result.Content = VirtualAlloc(0, fileSize32, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+			if (result.Content)
+			{
+				DWORD bytesRead;
+
+				if (ReadFile(fileHandle, result.Content, fileSize32, &bytesRead, 0) && (fileSize32 == bytesRead))
+				{
+					// File read successfully
+					result.ContentSize = fileSize32;
+				}
+				else
+				{
+					// TODO: LOG ERROR COULDNT READ FILE
+					DEBUGPlatformReleaseFileMemory(result.Content);
+					result.Content = nullptr;
+				}
+			}
+			else
+			{
+				// TODO: LOG ERROR COULDNT COMMITE MEMORY
+			}
+		}
+
+		CloseHandle(fileHandle);
+	}
+	else
+	{
+		// TODO: LOG ERROR COULDNT OPEN FILE
+	}
+
+	return result;
+}
+
+void DEBUGPlatformReleaseFileMemory(void* Memory)
+{
+	if (Memory)
+	{
+		VirtualFree(&Memory, 0, MEM_RELEASE);
+	}
+}
+
+bool DEBUGPlatformWriteEntireFile(const char* FileName, int32 MemorySize, void* Memory)
+{
+	bool result = false;
+
+	HANDLE fileHandle = CreateFile(FileName, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
+
+	if (fileHandle != INVALID_HANDLE_VALUE)
+	{
+
+		DWORD bytesWritten;
+
+		if (WriteFile(fileHandle, Memory, MemorySize, &bytesWritten, 0))
+		{
+			result = bytesWritten == MemorySize;
+		}
+		else
+		{
+			// TODO: Log error couldn't write the file
+		}
+
+		CloseHandle(fileHandle);
+	}
+	else
+	{
+		// TODO: Log error couldn't create file
+	}
+
+	return result;
 }

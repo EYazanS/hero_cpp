@@ -7,4 +7,7 @@
   <ItemGroup>
     <ClInclude Include="hero.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="tempFile.txt" />
+  </ItemGroup>
 </Project>
