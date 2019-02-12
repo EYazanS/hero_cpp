@@ -61,7 +61,7 @@ static x_input_set_state* XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 #pragma endregion
 
-static bool Runnig = true;
+static bool Running = true;
 static win32_offscreen_buffer GlobalBackBuffer;
 static IXAudio2* xAudio;
 static IXAudio2SourceVoice* GlobalSourceVoice;
@@ -73,7 +73,9 @@ const int SampleBits = 32;
 void Win32LoadXInputModule();
 void Win32DisplayBufferInWindow(win32_offscreen_buffer* Buffer, HDC DevicContext, win32_window_dimensions WindowDimensions);
 void Win32ProcessDigitalButtons(WORD XInputButtonState, DWORD ButtonBit, game_button_state* OldState, game_button_state* NewState);
+void Win32ProcessKeyboardMessage(game_button_state* NewState, bool isDown);
 void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
+void ProccessMessageQueue(game_controller_input* KeyboardControllerState);
 
 win32_window_dimensions Win32GetWindowDimensions(HWND Window);
 
@@ -118,8 +120,8 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 	LPVOID baseAddress = (LPVOID)Terabytes(2);
 	uint64 totalSize = gameMemory.PermenantStorageSize + gameMemory.TransiateStorageSize;
 
-	gameMemory.PermenantStorage = (uint8_t*)VirtualAlloc(baseAddress, totalSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-	gameMemory.TransiateStorage = (uint8_t*)gameMemory.PermenantStorage + gameMemory.PermenantStorageSize;
+	gameMemory.PermenantStorage = VirtualAlloc(baseAddress, (size_t)totalSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	gameMemory.TransiateStorage = ((uint8_t*)gameMemory.PermenantStorage + gameMemory.PermenantStorageSize);
 
 	soundBuffer.Frequency = 60;
 	soundBuffer.SampleRate = 48000;
@@ -149,7 +151,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 				HDC deviceContext = GetDC(window);
 
 				// Extract messages from windows
-				MSG message;
 
 				// Sound test
 				InitializeXAudio(soundBuffer.SampleRate);
@@ -162,22 +163,20 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 				game_input* newInput = &gameInput[0];
 				game_input* oldInput = &gameInput[1];
 
+
 				int16 maxControlllersCount = (int16)XUSER_MAX_COUNT;
 
 				if (maxControlllersCount > ArrayCount(newInput->Controllers))
 					maxControlllersCount = ArrayCount(newInput->Controllers);
 
-				// Change for future
-				while (Runnig)
-				{
-					while (PeekMessage(&message, 0, 0, 0, PM_REMOVE))
-					{
-						if (message.message == WM_QUIT)
-							Runnig = false;
+				game_controller_input * keyboardControllerState = &newInput->Controllers[0];
+				game_controller_input zeroController = {};
+				*keyboardControllerState = zeroController;
 
-						TranslateMessage(&message);
-						DispatchMessage(&message);
-					}
+				// Change for future
+				while (Running)
+				{
+					ProccessMessageQueue(keyboardControllerState);
 
 					for (int controllerIndex = 0; controllerIndex < maxControlllersCount; controllerIndex++)
 					{
@@ -223,14 +222,6 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 
 							newControllerState->MinX = newControllerState->StartX = oldControllerState->EndX = x;
 							newControllerState->MinY = newControllerState->StartY = oldControllerState->EndY = y;
-
-							bool  aButton = pad->wButtons & XINPUT_GAMEPAD_A;
-							bool  bButton = pad->wButtons & XINPUT_GAMEPAD_B;
-							bool  yButton = pad->wButtons & XINPUT_GAMEPAD_Y;
-							bool  xButton = pad->wButtons & XINPUT_GAMEPAD_X;
-
-							int16  stickX = pad->sThumbLX;
-							int16  stickY = pad->sThumbLY;
 
 							/*	XINPUT_VIBRATION vibrations;
 
@@ -292,11 +283,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 					real64 fps = (real32)performanceCounterFrequency / (real32)counterElapsed;
 					real64 mcpf = (real64)(cycleElapsed / (1000.f * 1000.f));
 
-#if 0	
 					char buffer[250];
 					sprintf_s(buffer, "%.02fms, %.02fFPS, %.02f mc/f \n", milliseconds, fps, mcpf);
 					OutputDebugString(buffer);
-#endif // 0
 
 					lastCountrer = endCountrer;
 					lastCycleCount = cycleElapsed;
@@ -393,7 +382,7 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 
 		case WM_CLOSE:
 		{
-			Runnig = false;
+			Running = false;
 		} break;
 
 		case WM_KEYUP:
@@ -401,89 +390,13 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 		case WM_SYSKEYUP:
 		case WM_SYSKEYDOWN:
 		{
-			uint64 virtualKeyCode = WParam;
-			bool wasDown = ((LParam & (1 << 30)) != 0);
-			bool isDown = ((LParam & (1 << 31)) == 0);
-
-			if (isDown != wasDown)
-				switch (virtualKeyCode)
-				{
-					case 'W':
-						OutputDebugString("W");
-						break;
-
-					case 'A':
-						OutputDebugString("A");
-						break;
-
-					case 'S':
-						OutputDebugString("S");
-						break;
-
-					case 'D':
-						OutputDebugString("D");
-						break;
-
-					case 'E':
-						OutputDebugString("E");
-						break;
-
-					case 'Q':
-						OutputDebugString("Q");
-						break;
-
-					case VK_SPACE:
-						OutputDebugString("Space");
-						break;
-
-					case VK_UP:
-						OutputDebugString("Up");
-						break;
-
-					case VK_LEFT:
-						OutputDebugString("Left");
-						break;
-
-					case VK_RIGHT:
-						OutputDebugString("Right");
-						break;
-
-					case VK_DOWN:
-						OutputDebugString("Down");
-						break;
-
-					case VK_ESCAPE:
-						OutputDebugString("Esacpe: ");
-						if (isDown)
-						{
-							OutputDebugString("is Down ");
-							// Runnig = false;
-						}
-
-						if (wasDown)
-						{
-							OutputDebugString("was Down ");
-						}
-						OutputDebugString("\n");
-						break;
-
-					case VK_F4:
-					{
-						// Is alt button held down
-						if ((LParam& (1 << 29)) != 0)
-							Runnig = false;
-
-					} break;
-
-					default:
-						break;
-				}
+			Assert(false);
 		}break;
 
 		case WM_DESTROY:
 		{
 			// TODO: Handle it as an error - try to re-create window
-			Runnig = false;
+			Running = false;
 		} break;
 
 		case WM_ACTIVATEAPP:
@@ -578,6 +491,12 @@ void Win32ProcessDigitalButtons(WORD XInputButtonState, DWORD ButtonBit, game_bu
 	NewState->HalfTransitionCount = (OldState->EndedDown != NewState->EndedDown) ? 1 : 0;
 }
 
+void Win32ProcessKeyboardMessage(game_button_state * NewState, bool isDown)
+{
+	NewState->EndedDown = isDown;
+	NewState->HalfTransitionCount++;
+}
+
 debug_read_file_result DEBUGPlatformReadEntireFile(const char* FileName)
 {
 	debug_read_file_result result = {};
@@ -634,7 +553,7 @@ void DEBUGPlatformReleaseFileMemory(void* Memory)
 	}
 }
 
-bool DEBUGPlatformWriteEntireFile(const char* FileName, int32 MemorySize, void* Memory)
+bool DEBUGPlatformWriteEntireFile(const char* FileName, uint32 MemorySize, void* Memory)
 {
 	bool result = false;
 
@@ -662,4 +581,101 @@ bool DEBUGPlatformWriteEntireFile(const char* FileName, int32 MemorySize, void* 
 	}
 
 	return result;
+}
+
+
+void ProccessMessageQueue(game_controller_input * KeyboardControllerState)
+{
+	MSG message;
+
+	while (PeekMessage(&message, 0, 0, 0, PM_REMOVE))
+	{
+		switch (message.message)
+		{
+			case WM_KEYUP:
+			case WM_KEYDOWN:
+			case WM_SYSKEYUP:
+			case WM_SYSKEYDOWN:
+			{
+				uint64 virtualKeyCode = message.wParam;
+				bool wasDown = ((message.lParam & (1 << 30)) != 0);
+				bool isDown = ((message.lParam & (1 << 31)) == 0);
+
+				if (isDown != wasDown)
+					switch (virtualKeyCode)
+					{
+						case 'W':
+							Win32ProcessKeyboardMessage(&KeyboardControllerState->UpButton, isDown);
+							break;
+
+						case 'A':
+							Win32ProcessKeyboardMessage(&KeyboardControllerState->LeftButton, isDown);
+							break;
+
+						case 'S':
+							Win32ProcessKeyboardMessage(&KeyboardControllerState->DownButton, isDown);
+							break;
+
+						case 'D':
+							Win32ProcessKeyboardMessage(&KeyboardControllerState->RightButton, isDown);
+							break;
+
+						case 'E':
+							OutputDebugString("E");
+							break;
+
+						case 'Q':
+							OutputDebugString("Q");
+							break;
+
+						case VK_SPACE:
+							OutputDebugString("Space");
+							break;
+
+						case VK_UP:
+							Win32ProcessKeyboardMessage(&KeyboardControllerState->UpButton, isDown);
+							break;
+
+						case VK_LEFT:
+							Win32ProcessKeyboardMessage(&KeyboardControllerState->LeftButton, isDown);
+							break;
+
+						case VK_RIGHT:
+							Win32ProcessKeyboardMessage(&KeyboardControllerState->RightButton, isDown);
+							break;
+
+						case VK_DOWN:
+							Win32ProcessKeyboardMessage(&KeyboardControllerState->DownButton, isDown);
+							break;
+
+						case VK_ESCAPE:
+							Running = false;
+							break;
+
+						case VK_F4:
+						{
+							// Is alt button held down
+							if ((message.lParam& (1 << 29)) != 0)
+								Running = false;
+
+						} break;
+
+						default:
+							break;
+					}
+			} break;
+
+			case WM_QUIT:
+			{
+				Running = false;
+
+			} break;
+
+			default:
+			{
+				TranslateMessage(&message);
+				DispatchMessage(&message);
+			} break;
+		}
+	}
 }

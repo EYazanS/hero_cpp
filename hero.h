@@ -39,7 +39,7 @@ struct game_offscreen_buffer
 struct game_sound_buffer
 {
 	real32 BufferData[96000];
-	int VoiceBufferSampleCount;
+	uint32 VoiceBufferSampleCount;
 	int SampleRate;
 	int Frequency;
 	real32 WavePeriod;
@@ -48,8 +48,8 @@ struct game_sound_buffer
 
 struct game_button_state
 {
-	int HalfTransitionCount;
 	bool EndedDown;
+	int HalfTransitionCount;
 };
 
 struct game_controller_input
@@ -99,11 +99,11 @@ struct game_state
 
 struct game_memory
 {
-	bool IsInitialized;
 	uint64 PermenantStorageSize;
-	void* PermenantStorage;
 	uint64 TransiateStorageSize;
+	void* PermenantStorage;
 	void* TransiateStorage;
+	bool IsInitialized;
 };
 
 struct debug_read_file_result
@@ -122,7 +122,7 @@ inline uint32 SafeTruncateUint64(uint64 Value)
 
 // Services that the game provide for the platform
 void DEBUGPlatformReleaseFileMemory(void* Memory);
-bool DEBUGPlatformWriteEntireFile(const char* FileName, int32 MemorySize, void* Memory);
+bool DEBUGPlatformWriteEntireFile(const char* FileName, uint32 MemorySize, void* Memory);
 debug_read_file_result DEBUGPlatformReadEntireFile(const char* FileName);
 
 // Need to take the use input, the bitmap buffer to use, the sound buffer to use and the timing

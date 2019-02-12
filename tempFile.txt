@@ -53,8 +53,8 @@ void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
 
 		for (int x = 0; x < Buffer->Width; ++x)
 		{
-			uint8 blue = (uint8)x + XOffset;
-			uint8 green = (uint8)y + YOffset;
+			uint8 blue = (uint8)(x + XOffset);
+			uint8 green = (uint8)(y + YOffset);
 			uint8 red = 100;
 			uint8 alpha = 255;
 
