@@ -1,5 +1,6 @@
 #pragma once
 
+
 #define ArrayCount(Array) (sizeof((Array)) / sizeof((Array)[0]))
 
 #define Killobytes(Value) ((Value)*1024LL)
@@ -9,6 +10,8 @@
 #define Assert(Expression) \
 	if (!(Expression)) { *(int*)0 = 0; }
 
+#define internal static 
+
 #include <cstdint>
 #include <math.h>
 
@@ -16,6 +19,8 @@ typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
+
+typedef int32 bool32;
 
 typedef uint8_t uint8;
 typedef uint16_t uint16;
@@ -38,56 +43,58 @@ struct game_offscreen_buffer
 
 struct game_sound_buffer
 {
-	real32 BufferData[96000];
 	uint32 VoiceBufferSampleCount;
 	int SampleRate;
 	int Frequency;
 	real32 WavePeriod;
 	real32 Time;
+	real32 BufferData[96000];
 };
 
 struct game_button_state
 {
-	bool EndedDown;
+	bool32 EndedDown;
 	int HalfTransitionCount;
 };
 
 struct game_controller_input
 {
-	real32 StartX;
-	real32 StartY;
-
-	real32 MinX;
-	real32 MinY;
-
-	real32 MaxX;
-	real32 MaxY;
-
-	real32 EndX;
-	real32 EndY;
-
-	bool IsAnalog;
+	bool32 IsConnected;
+	bool32 IsAnalog;
+	real32 StickAverageX;
+	real32 StickAverageY;
 
 	union
 	{
-		game_button_state Buttons[6];
+		game_button_state Buttons[12];
+
 		struct
 		{
-			game_button_state UpButton;
-			game_button_state DownButton;
-			game_button_state RightButton;
-			game_button_state LeftButton;
+			game_button_state ActionUp;
+			game_button_state ActionDown;
+			game_button_state ActionRight;
+			game_button_state ActionLeft;
+
+			game_button_state MoveUp;
+			game_button_state MoveDown;
+			game_button_state MoveRight;
+			game_button_state MoveLeft;
+
 			game_button_state LeftShoulder;
 			game_button_state RightShoulder;
+
 			game_button_state Start;
 			game_button_state Back;
+
+			// Add button before this line so the assertion about the buttons array == the struct can hit properly 
+			game_button_state Terminator;
 		};
 	};
 };
 
 struct game_input
 {
-	game_controller_input Controllers[4];
+	game_controller_input Controllers[5];
 };
 
 struct game_state
@@ -103,7 +110,7 @@ struct game_memory
 	uint64 TransiateStorageSize;
 	void* PermenantStorage;
 	void* TransiateStorage;
-	bool IsInitialized;
+	bool32 IsInitialized;
 };
 
 struct debug_read_file_result
@@ -113,6 +120,13 @@ struct debug_read_file_result
 };
 
 // Utility functions 
+inline game_controller_input* GetController(game_input* Input, size_t ControllerIndex)
+{
+	Assert(ControllerIndex < ArrayCount(Input->Controllers));
+	game_controller_input* result = &Input->Controllers[ControllerIndex];
+	return result;
+}
+
 inline uint32 SafeTruncateUint64(uint64 Value)
 {
 	Assert(Value < 0xFFFFFFFF);
@@ -122,10 +136,11 @@ inline uint32 SafeTruncateUint64(uint64 Value)
 
 // Services that the game provide for the platform
 void DEBUGPlatformReleaseFileMemory(void* Memory);
-bool DEBUGPlatformWriteEntireFile(const char* FileName, uint32 MemorySize, void* Memory);
+bool32 DEBUGPlatformWriteEntireFile(const char* FileName, uint32 MemorySize, void* Memory);
 debug_read_file_result DEBUGPlatformReadEntireFile(const char* FileName);
 
 // Need to take the use input, the bitmap buffer to use, the sound buffer to use and the timing
-void GameUpdateAndRender(game_memory* Memory, game_offscreen_buffer* RenderBuffer, game_sound_buffer* SoundBuffer, game_input* Input);
+
+void GameUpdateAndRender(game_memory* Memory, game_input* Input, game_offscreen_buffer* Buffer, game_sound_buffer* SoundBuffer);
 void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset);
 void OutputGameSound(game_sound_buffer* buffer);

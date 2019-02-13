@@ -8,6 +8,6 @@
     <ClInclude Include="hero.h" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="tempFile.txt" />
+    <None Include="cpp.hint" />
   </ItemGroup>
 </Project>

@@ -22,20 +22,40 @@ void GameUpdateAndRender(game_memory* Memory, game_offscreen_buffer* RenderBuffe
 		Memory->IsInitialized = true;
 	}
 
-	game_controller_input* input0 = &Input->Controllers[0];
+	for (size_t controllerIndex = 0; controllerIndex < ArrayCount(Input->Controllers); controllerIndex++)
+	{
+		game_controller_input* controller = &Input->Controllers[controllerIndex];
 
-	if (input0->IsAnalog)
-	{
-		gameState->XOffset += (int32)(4.f * (input0->EndY));
-	}
-	else
-	{
-		//TODO: User digital movement system
-	}
+		if (controller->IsAnalog)
+		{
+			gameState->XOffset += (int32)(4.f * (controller->StickAverageX));
+			gameState->YOffset -= (int32)(4.f * (controller->StickAverageY));
+		}
+		else
+		{
+			uint16 howMuchToMove = 10;
 
-	if (input0->DownButton.EndedDown)
-	{
-		gameState->YOffset += 1;
+			//Use digital movement system
+			if (controller->MoveUp.EndedDown)
+			{
+				gameState->YOffset += howMuchToMove;
+			}
+
+			if (controller->MoveDown.EndedDown)
+			{
+				gameState->YOffset -= howMuchToMove;
+			}
+
+			if (controller->MoveRight.EndedDown)
+			{
+				gameState->XOffset -= howMuchToMove;
+			}
+
+			if (controller->MoveLeft.EndedDown)
+			{
+				gameState->XOffset += howMuchToMove;
+			}
+		}
 	}
 
 	// TODO: Allow sample offset for more robust platform options

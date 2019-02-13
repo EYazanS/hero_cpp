@@ -1,48 +1,5 @@
 #include "hero.h"
 
-void GameUpdateAndRender(game_memory* Memory, game_offscreen_buffer* RenderBuffer, game_sound_buffer* SoundBuffer, game_input* Input)
-{
-	Assert(sizeof(game_state) <= Memory->PermenantStorageSize);
-
-	game_state * gameState = (game_state*)Memory->PermenantStorage;
-
-	if (!Memory->IsInitialized)
-	{
-		const char* fileName = "tempFile.txt";
-
-		debug_read_file_result file = DEBUGPlatformReadEntireFile(__FILE__);
-
-		if (file.Content)
-		{
-			DEBUGPlatformWriteEntireFile(fileName, file.ContentSize, file.Content);
-			DEBUGPlatformReleaseFileMemory(file.Content);
-		}
-
-		gameState->ToneHz = 256;
-		Memory->IsInitialized = true;
-	}
-
-	game_controller_input* input0 = &Input->Controllers[0];
-
-	if (input0->IsAnalog)
-	{
-		gameState->XOffset += (int32)(4.f * (input0->EndY));
-	}
-	else
-	{
-		//TODO: User digital movement system
-	}
-
-	if (input0->DownButton.EndedDown)
-	{
-		gameState->YOffset += 1;
-	}
-
-	// TODO: Allow sample offset for more robust platform options
-	RenderGradiant(RenderBuffer, gameState->XOffset, gameState->YOffset);
-	OutputGameSound(SoundBuffer);
-}
-
 void RenderGradiant(game_offscreen_buffer* Buffer, int XOffset, int YOffset)
 {
 	uint8* row = (uint8*)Buffer->Memory;
@@ -76,4 +33,68 @@ void OutputGameSound(game_sound_buffer * Buffer)
 		if (Buffer->Time > Buffer->WavePeriod)
 			Buffer->Time -= Buffer->WavePeriod;    // if we're beyond the period of the sine, skip time back by one period
 	}
+}
+
+void GameUpdateAndRender(game_memory * Memory, game_input * Input, game_offscreen_buffer * Buffer, game_sound_buffer * SoundBuffer)
+{
+	Assert(&Input->Controllers[0].Terminator - &Input->Controllers[0].Buttons[0] == (ArrayCount(Input->Controllers[0].Buttons)));
+	Assert(sizeof(game_state) <= Memory->PermenantStorageSize);
+
+	game_state * gameState = (game_state*)Memory->PermenantStorage;
+
+	if (!Memory->IsInitialized)
+	{
+		/*	const char* fileName = "tempFile.txt";
+
+			debug_read_file_result file = DEBUGPlatformReadEntireFile(__FILE__);
+
+			if (file.Content)
+			{
+				DEBUGPlatformWriteEntireFile(fileName, file.ContentSize, file.Content);
+				DEBUGPlatformReleaseFileMemory(file.Content);
+			}*/
+
+		gameState->ToneHz = 256;
+		Memory->IsInitialized = true;
+	}
+
+	for (size_t controllerIndex = 0; controllerIndex < ArrayCount(Input->Controllers); controllerIndex++)
+	{
+		game_controller_input* controller = GetController(Input, controllerIndex);
+
+		if (controller->IsAnalog)
+		{
+			gameState->XOffset += (int32)(4.f * (controller->StickAverageX));
+			gameState->YOffset -= (int32)(4.f * (controller->StickAverageY));
+		}
+		else
+		{
+			uint16 howMuchToMove = 10;
+
+			//Use digital movement system
+			if (controller->MoveUp.EndedDown)
+			{
+				gameState->YOffset += howMuchToMove;
+			}
+
+			if (controller->MoveDown.EndedDown)
+			{
+				gameState->YOffset -= howMuchToMove;
+			}
+
+			if (controller->MoveRight.EndedDown)
+			{
+				gameState->XOffset -= howMuchToMove;
+			}
+
+			if (controller->MoveLeft.EndedDown)
+			{
+				gameState->XOffset += howMuchToMove;
+			}
+		}
+	}
+
+	// TODO: Allow sample offset for more robust platform options
+	RenderGradiant(Buffer, gameState->XOffset, gameState->YOffset);
+	OutputGameSound(SoundBuffer);
 }

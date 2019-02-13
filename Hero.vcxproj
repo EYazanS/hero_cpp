@@ -26,7 +26,7 @@
     <ClInclude Include="hero.h" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="tempFile.txt" />
+    <None Include="cpp.hint" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
