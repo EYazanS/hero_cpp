@@ -66,6 +66,7 @@ static win32_offscreen_buffer GlobalBackBuffer;
 static IXAudio2* xAudio;
 static IXAudio2SourceVoice* GlobalSourceVoice;
 static XAUDIO2_BUFFER GlobalSoundBuffer = { 0 };
+static uint64 performanceCounterFrequency;
 
 const int channels = 2;
 const int SampleBits = 32;
@@ -76,23 +77,31 @@ internal void Win32ProcessDigitalButtons(WORD XInputButtonState, DWORD ButtonBit
 internal void Win32ProcessKeyboardMessage(game_button_state* NewState, bool32 isDown);
 internal void Win32ResizeDIBSection(win32_offscreen_buffer* Buffer, int Height, int Width);
 internal void Win32ProcessMessageQueue(game_controller_input* KeyboardControllerState);
-
 internal real32 Win32ProcessXInputStickValues(real32 value, SHORT deadZoneThreshold);
-
 internal win32_window_dimensions Win32GetWindowDimensions(HWND Window);
-
 internal LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam);
-
 internal HRESULT InitializeXAudio(int SampleRate);
-// internal HRESULT PlayGameSound(game_sound_buffer* SoundBuffer);
+internal HRESULT PlayGameSound(game_sound_buffer* SoundBuffer);
+
+inline LARGE_INTEGER Win32GetWallClock();
+inline real32 Win32GetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End);
 
 // Entry point
 int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR CommandLine, int ShowCode)
 {
 	LARGE_INTEGER performanceCounterFrequencyResult;
 	QueryPerformanceFrequency(&performanceCounterFrequencyResult);
-	uint64 performanceCounterFrequency = performanceCounterFrequencyResult.QuadPart;
+	performanceCounterFrequency = performanceCounterFrequencyResult.QuadPart;
+
+	UINT desiredSchedulerMs = 1;
+	bool32 sleepIsGranular = (timeBeginPeriod(desiredSchedulerMs) == TIMERR_NOERROR);
+
 	uint64 lastCycleCount = __rdtsc();
+
+	// TODO: query refresh rate from OS
+	uint16 monitorRefreshRate = 60;
+	uint16 gameUpdateRate = monitorRefreshRate / 2;
+	real32 targetSecondsPerFrame = 1.f / (real32)monitorRefreshRate;
 
 	// Initialize Window to 0
 	WNDCLASS windowsClass = {};
@@ -106,7 +115,7 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 	Win32ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
 
 	// CS_HREDRAW|CS_VREDRAW redraw the entire window when it gets dragged, h => horizontal | v -> vertical
-	windowsClass.style = CS_HREDRAW | CS_VREDRAW;
+	windowsClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	windowsClass.hInstance = Instance;
 	windowsClass.lpszClassName = "Class Hero game";
 	windowsClass.lpfnWndProc = MainWindowCallBack;
@@ -153,15 +162,11 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 				// Initialize XAudio
 				InitializeXAudio(soundBuffer.SampleRate);
 
-				LARGE_INTEGER lastCounter;
-
-				QueryPerformanceCounter(&lastCounter);
-				// Win32InitXAudioSound(sampleBits, Channels, samplesPerSecond);
+				LARGE_INTEGER lastCounter = Win32GetWallClock();
 
 				game_input gameInput[2] = {};
 				game_input* newInput = &gameInput[0];
 				game_input* oldInput = &gameInput[1];
-
 
 				uint16 maxControlllersCount = XUSER_MAX_COUNT;
 
@@ -274,35 +279,57 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, LPSTR Comma
 
 					GameUpdateAndRender(&gameMemory, newInput, &gameBuffer, &soundBuffer);
 
+					LARGE_INTEGER workCounter = Win32GetWallClock();
+
+					real32 workSecondsElapsed = Win32GetSecondsElapsed(lastCounter, workCounter);
+					real32 secondsElapsedForFrame = workSecondsElapsed;
+					
+					if (secondsElapsedForFrame < targetSecondsPerFrame)
+					{
+						if (sleepIsGranular)
+						{
+							DWORD sleepMs = (DWORD)((targetSecondsPerFrame - secondsElapsedForFrame) * 1000.f);
+							if (sleepMs > 0)
+							{
+								Sleep(sleepMs);
+							}
+						}
+
+						while (secondsElapsedForFrame < targetSecondsPerFrame)
+						{
+							secondsElapsedForFrame = Win32GetSecondsElapsed(lastCounter, Win32GetWallClock());
+						}
+					}
+					else
+					{
+						//  TODO: Missed frame
+						Assert(true);
+					}
+
 					// PlayGameSound(&soundBuffer);
 
 					win32_window_dimensions dimensions = Win32GetWindowDimensions(window);
 					Win32DisplayBufferInWindow(&GlobalBackBuffer, deviceContext, dimensions);
 
-					LARGE_INTEGER endCountrer;
-					QueryPerformanceCounter(&endCountrer);
-
-					endCountrer.QuadPart;
-					// ReleaseDC(window, deviceContext);
-					uint64 endCycleCount = __rdtsc();
-
-					uint64 cycleElapsed = endCycleCount - lastCycleCount;
-					uint64 counterElapsed = endCountrer.QuadPart - lastCounter.QuadPart;
-					real64 milliseconds = (1000.f * (real32)counterElapsed) / (real32)performanceCounterFrequency;
-					real64 fps = (real32)performanceCounterFrequency / (real32)counterElapsed;
-					real64 mcpf = (real64)(cycleElapsed / (1000.f * 1000.f));
-
-					char buffer[250];
-					sprintf_s(buffer, "%.02fms, %.02fFPS, %.02f mc/f \n", milliseconds, fps, mcpf);
-					OutputDebugStringA(buffer);
-
-					lastCounter = endCountrer;
-					lastCycleCount = cycleElapsed;
-
 					//TODO: make a swap function
-					game_input * temp = newInput;
+					game_input* temp = newInput;
 					newInput = oldInput;
 					oldInput = temp;
+
+					LARGE_INTEGER endCounter = Win32GetWallClock();
+					real64 msPerFrame = (1000.f * (real64)Win32GetSecondsElapsed(lastCounter, endCounter));
+					lastCounter = endCounter;
+
+					uint64 endCycleCount = __rdtsc();
+					uint64 cyclesElapsed = endCycleCount - lastCycleCount;
+					lastCycleCount = endCycleCount;
+
+					real64 fps = 0.0f; // (real64)performanceCounterFrequency / (real64)counterElapsed
+					real64 mcpf = ((real64)cyclesElapsed / ((real64)1000.f * (real64)1000.f));
+
+					char buffer[250];
+					sprintf_s(buffer, "%.02fms, %.02fFPS, %.02f mc/f \n", msPerFrame, fps, mcpf);
+					OutputDebugStringA(buffer);
 				}
 			}
 			else
@@ -333,48 +360,48 @@ LRESULT CALLBACK MainWindowCallBack(HWND Window, UINT Message, WPARAM WParam, LP
 
 	switch (Message)
 	{
-		case WM_SIZE:
-		{
+	case WM_SIZE:
+	{
 
-		} break;
+	} break;
 
-		case WM_CLOSE:
-		{
-			Running = false;
-		} break;
+	case WM_CLOSE:
+	{
+		Running = false;
+	} break;
 
-		case WM_KEYUP:
-		case WM_KEYDOWN:
-		case WM_SYSKEYUP:
-		case WM_SYSKEYDOWN:
-		{
-			Assert(false);
-		}break;
+	case WM_KEYUP:
+	case WM_KEYDOWN:
+	case WM_SYSKEYUP:
+	case WM_SYSKEYDOWN:
+	{
+		Assert(false);
+	}break;
 
-		case WM_DESTROY:
-		{
-			// TODO: Handle it as an error - try to re-create window
-			Running = false;
-		} break;
+	case WM_DESTROY:
+	{
+		// TODO: Handle it as an error - try to re-create window
+		Running = false;
+	} break;
 
-		case WM_ACTIVATEAPP:
-		{
-		} break;
+	case WM_ACTIVATEAPP:
+	{
+	} break;
 
-		case WM_PAINT:
-		{
-			PAINTSTRUCT paint;
-			HDC devicContext = BeginPaint(Window, &paint);
-			win32_window_dimensions dimensions = Win32GetWindowDimensions(Window);
-			Win32DisplayBufferInWindow(&GlobalBackBuffer, devicContext, dimensions);
-			EndPaint(Window, &paint);
-		}break;
+	case WM_PAINT:
+	{
+		PAINTSTRUCT paint;
+		HDC devicContext = BeginPaint(Window, &paint);
+		win32_window_dimensions dimensions = Win32GetWindowDimensions(Window);
+		Win32DisplayBufferInWindow(&GlobalBackBuffer, devicContext, dimensions);
+		EndPaint(Window, &paint);
+	}break;
 
-		default:
-		{
-			// return window default behaviour
-			result = DefWindowProcA(Window, Message, WParam, LParam);
-		} break;
+	default:
+	{
+		// return window default behaviour
+		result = DefWindowProcA(Window, Message, WParam, LParam);
+	} break;
 
 	}
 
@@ -474,7 +501,7 @@ HRESULT InitializeXAudio(int SampleRate)
 	return result;
 }
 
-/*HRESULT PlayGameSound(game_sound_buffer * SoundBuffer)
+HRESULT PlayGameSound(game_sound_buffer * SoundBuffer)
 {
 	HRESULT result;
 
@@ -492,7 +519,7 @@ HRESULT InitializeXAudio(int SampleRate)
 		return result;
 
 	return result;
-}*/
+}
 
 void Win32ProcessDigitalButtons(WORD XInputButtonState, DWORD ButtonBit, game_button_state * OldState, game_button_state * NewState)
 {
@@ -601,90 +628,90 @@ void Win32ProcessMessageQueue(game_controller_input * KeyboardControllerState)
 	{
 		switch (message.message)
 		{
-			case WM_KEYUP:
-			case WM_KEYDOWN:
-			case WM_SYSKEYUP:
-			case WM_SYSKEYDOWN:
-			{
-				uint64 virtualKeyCode = message.wParam;
-				bool32 wasDown = ((message.lParam & (1 << 30)) != 0);
-				bool32 isDown = ((message.lParam & (1 << 31)) == 0);
+		case WM_KEYUP:
+		case WM_KEYDOWN:
+		case WM_SYSKEYUP:
+		case WM_SYSKEYDOWN:
+		{
+			uint64 virtualKeyCode = message.wParam;
+			bool32 wasDown = ((message.lParam & (1 << 30)) != 0);
+			bool32 isDown = ((message.lParam & (1 << 31)) == 0);
 
-				if (isDown != wasDown)
-					switch (virtualKeyCode)
-					{
-						case 'W':
-							Win32ProcessKeyboardMessage(&KeyboardControllerState->MoveUp, isDown);
-							break;
+			if (isDown != wasDown)
+				switch (virtualKeyCode)
+				{
+				case 'W':
+					Win32ProcessKeyboardMessage(&KeyboardControllerState->MoveUp, isDown);
+					break;
 
-						case 'A':
-							Win32ProcessKeyboardMessage(&KeyboardControllerState->MoveLeft, isDown);
-							break;
+				case 'A':
+					Win32ProcessKeyboardMessage(&KeyboardControllerState->MoveLeft, isDown);
+					break;
 
-						case 'S':
-							Win32ProcessKeyboardMessage(&KeyboardControllerState->MoveDown, isDown);
-							break;
+				case 'S':
+					Win32ProcessKeyboardMessage(&KeyboardControllerState->MoveDown, isDown);
+					break;
 
-						case 'D':
-							Win32ProcessKeyboardMessage(&KeyboardControllerState->MoveRight, isDown);
-							break;
+				case 'D':
+					Win32ProcessKeyboardMessage(&KeyboardControllerState->MoveRight, isDown);
+					break;
 
-						case 'E':
-							OutputDebugStringA("E");
-							break;
+				case 'E':
+					OutputDebugStringA("E");
+					break;
 
-						case 'Q':
-							OutputDebugStringA("Q");
-							break;
+				case 'Q':
+					OutputDebugStringA("Q");
+					break;
 
-						case VK_SPACE:
-							OutputDebugStringA("Space");
-							break;
+				case VK_SPACE:
+					OutputDebugStringA("Space");
+					break;
 
-						case VK_UP:
-							Win32ProcessKeyboardMessage(&KeyboardControllerState->ActionUp, isDown);
-							break;
+				case VK_UP:
+					Win32ProcessKeyboardMessage(&KeyboardControllerState->ActionUp, isDown);
+					break;
 
-						case VK_LEFT:
-							Win32ProcessKeyboardMessage(&KeyboardControllerState->ActionLeft, isDown);
-							break;
+				case VK_LEFT:
+					Win32ProcessKeyboardMessage(&KeyboardControllerState->ActionLeft, isDown);
+					break;
 
-						case VK_RIGHT:
-							Win32ProcessKeyboardMessage(&KeyboardControllerState->ActionRight, isDown);
-							break;
+				case VK_RIGHT:
+					Win32ProcessKeyboardMessage(&KeyboardControllerState->ActionRight, isDown);
+					break;
 
-						case VK_DOWN:
-							Win32ProcessKeyboardMessage(&KeyboardControllerState->ActionDown, isDown);
-							break;
+				case VK_DOWN:
+					Win32ProcessKeyboardMessage(&KeyboardControllerState->ActionDown, isDown);
+					break;
 
-						case VK_ESCAPE:
-							Running = false;
-							break;
+				case VK_ESCAPE:
+					Running = false;
+					break;
 
-						case VK_F4:
-						{
-							// Is alt button held down
-							if ((message.lParam& (1 << 29)) != 0)
-								Running = false;
+				case VK_F4:
+				{
+					// Is alt button held down
+					if ((message.lParam& (1 << 29)) != 0)
+						Running = false;
 
-						} break;
+				} break;
 
-						default:
-							break;
-					}
-			} break;
+				default:
+					break;
+				}
+		} break;
 
-			case WM_QUIT:
-			{
-				Running = false;
+		case WM_QUIT:
+		{
+			Running = false;
 
-			} break;
+		} break;
 
-			default:
-			{
-				TranslateMessage(&message);
-				DispatchMessage(&message);
-			} break;
+		default:
+		{
+			TranslateMessage(&message);
+			DispatchMessage(&message);
+		} break;
 		}
 	}
 }
@@ -698,5 +725,18 @@ real32 Win32ProcessXInputStickValues(real32 value, SHORT deadZoneThreshold)
 	else if (value > deadZoneThreshold)
 		result = (real32)(value + deadZoneThreshold) / (32767.f - deadZoneThreshold);
 
+	return result;
+}
+
+inline real32 Win32GetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
+{
+	real32 result = ((real32)(End.QuadPart - Start.QuadPart) / (real32)performanceCounterFrequency);
+	return result;
+}
+
+inline LARGE_INTEGER Win32GetWallClock()
+{
+	LARGE_INTEGER result;
+	QueryPerformanceCounter(&result);
 	return result;
 }
